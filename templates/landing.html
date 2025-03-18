@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome to Questo{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center min-vh-100">
+    <div class="col-md-6 text-center">
+        <h1 class="display-4 mb-4">Welcome to Questo</h1>
+        <p class="lead mb-5">Your smart question management tool</p>
+        
+        <a href="/signin/" class="btn btn-light btn-lg border shadow-sm">
+            <img src="https://www.google.com/favicon.ico" alt="Google" style="width: 20px; margin-right: 10px;">
+            Sign in with Google
+        </a>
+    </div>
+</div>
+{% endblock %}
