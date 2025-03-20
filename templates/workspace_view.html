@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center">
-        <h1 class="h3">CS-{{ workspace_id }}</h1>
+        <h1 class="h3">{{ workspace_id }}</h1>
         <div>
             <a href="{{ url_for('index') }}" class="btn btn-secondary">LOGOUT</a>
             <a href="{{ url_for('add_question', workspace_id=workspace_id) }}" class="btn btn-primary">ADD QUESTION</a>

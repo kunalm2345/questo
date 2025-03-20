@@ -1,7 +1,17 @@
 from flask import Flask, render_template, url_for, redirect, request, session
+from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
+from wtforms.validators import DataRequired
+from flask_wtf import FlaskForm
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'FLASK_SECKEY'
+
+class AddQForm(FlaskForm):
+    question_file = FileField('Upload Question', validators=[DataRequired()])
+    tags = StringField('Tags', validators=[DataRequired()])
+    sol = TextAreaField('Solution', validators=[DataRequired()])
+    practice = BooleanField('Set this as a practice question')
+    submit = SubmitField('Save')
 
 @app.route('/')
 def index():
@@ -42,6 +52,7 @@ def logout():
 
 @app.route('/workspace/<workspace_id>/')
 def workspace_view(workspace_id):
+    global questions
     if session.get('id') is None:
         return redirect(url_for('index'))  # Redirect if not logged in
 
@@ -56,23 +67,16 @@ def workspace_view(workspace_id):
 
 # Add Question Page
 @app.route('/workspace/<workspace_id>/add-question/', methods=['GET', 'POST'])
-def add_question(workspace_id):
+def add_question(workspace_id, methods=['GET','POST']):
     if 'id' not in session or 'workspace' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
 
-    if request.method == 'POST':
-        uploaded_file = request.files.get('question_image')  # Handle file upload
-        tags = request.form.get('tags')
-        solution = request.form.get('solution')
-        practice = request.form.get('practice') == 'on'  # Checkbox returns 'on' if checked
+    form = AddQForm()
+    #if form.validate_on_submit():
+        #{"id":"1235", "sol":form.sol.data, "tags":form.tags.data, "question_file":form.question_file.data, "practice":form.practice.data})
 
-        # Save logic (TODO: Store in DB)
-        print(f"Uploaded: {uploaded_file.filename if uploaded_file else 'No file'}")
-        print(f"Tags: {tags}, Solution: {solution}, Practice: {practice}")
 
-        return redirect(url_for('workspace_view', workspace_id=workspace_id))  # Redirect after saving
-
-    return render_template('add_question.html', workspace_id=workspace_id)
+    return render_template('add_question.html', workspace_id=workspace_id, form=form)
 
 # Create Question Paper Page
 @app.route('/workspace/<workspace_id>/create-qp/', methods=['GET', 'POST'])
