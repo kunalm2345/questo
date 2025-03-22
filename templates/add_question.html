@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Add Question - {{ workspace.name }}{% endblock %}
+{% block title %}Add Question - {{ workspace['key'] }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -10,21 +10,25 @@
         <h1 class="h3">Adding a New Question</h1>
     </div>
 
-    <form method="POST" enctype="multipart/form-data" class="d-flex flex-column align-items-center">
-        {{ form.hidden_tag() }}
+    <!-- Image Upload Form -->
+    <form id="upload-form" action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data" class="d-flex flex-column align-items-center mb-4">
+        <input type="hidden" name="workspace_id" value="{{ workspace['key'] }}">
+        {{ image_form.hidden_tag() }}
+
+        <!-- File input explicitly named -->
+        <input type="file" name="question_file" id="question_file" class="d-none" accept=".png,.jpg,.jpeg">
 
         <!-- Modern image upload area -->
         <div class="mb-3 w-100">
             <div class="upload-area p-5 border rounded bg-light text-center position-relative" id="upload-area">
-                <div class="upload-content">
+                <div class="upload-content" {% if file_url %}style="display: none;"{% endif %}>
                     <i class="bi bi-image fs-1 mb-2"></i>
                     <p>Drag and drop an image file (PNG, JPG, JPEG) or click to browse</p>
-                    {{ form.question_file(class="d-none", id="question_file", accept=".png,.jpg,.jpeg") }}
                 </div>
-                <div class="image-preview d-none position-absolute top-0 start-0 w-100 h-100">
+                <div class="image-preview {% if not file_url %}d-none{% endif %} position-absolute top-0 start-0 w-100 h-100">
                     <div class="image-overlay position-absolute top-0 start-0 w-100 h-100"></div>
                     <div class="position-absolute bottom-0 start-0 w-100 p-2 d-flex justify-content-between align-items-center">
-                        <span id="file-name" class="text-white mx-1 bg-gray"></span>
+                        <span id="file-name" class="text-white mx-1 bg-gray">{% if file_url %}Uploaded Image{% endif %}</span>
                         <button type="button" class="btn btn-sm btn-danger remove-image" id="remove-image">
                             <i class="bi bi-x"></i>
                         </button>
@@ -32,6 +36,19 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Submit button for image upload -->
+        <div class="text-center mb-3">
+            {{ image_form.submit(class="btn btn-lg btn-primary") }}
+        </div>
+    </form>
+    
+    <!-- Question Details Form (only shown after image upload) -->
+    <form id="question-form" method="POST" class="d-flex flex-column align-items-center {% if not file_url %}d-none{% endif %}">
+        {{ question_form.hidden_tag() }}
+        
+        <!-- Hidden field for file URL -->
+        {{ question_form.file_src(id="file_src", class="d-none") }}
         
         <!-- Fill automatically button with dividers -->
         <div class="d-flex align-items-center mb-3 w-100">
@@ -43,12 +60,12 @@
         
         <!-- New question text field with floating label -->
         <div class="form-floating mb-3 w-100">
-            {{ form.question_text(class="form-control", placeholder="Enter question text", style="height: 150px", id="question_text") }}
-            {{ form.question_text.label(for="question_text") }}
+            {{ question_form.question_text(class="form-control", placeholder="Enter question text", style="height: 150px", id="question_text") }}
+            {{ question_form.question_text.label(for="question_text") }}
         </div>
         
         <!-- Hidden tags field for form submission -->
-        {{ form.tags(class="d-none", id="tags_hidden") }}
+        {{ question_form.tags(class="d-none", id="tags_hidden") }}
         
         <!-- Custom tags input with pills/badges -->
         <div class="mb-3 w-100">
@@ -62,20 +79,20 @@
         
         <!-- Solution field with floating label -->
         <div class="form-floating mb-3 w-100 ">
-            {{ form.sol(class="form-control", placeholder="Enter solution", id="sol") }}
-            {{ form.sol.label(for="sol") }}
+            {{ question_form.sol(class="form-control", placeholder="Enter solution", id="sol") }}
+            {{ question_form.sol.label(for="sol") }}
         </div>
         
         <div class="row w-100 justify-content-between align-items-center">
             <!-- Practice checkbox -->
             <div class="col form-check mb-3">
-                {{ form.practice(class="form-check-input me-2") }} 
-                {{ form.practice.label(class="form-check-label") }}
+                {{ question_form.practice(class="form-check-input me-2") }} 
+                {{ question_form.practice.label(class="form-check-label") }}
             </div>
             
             <!-- Submit button -->
             <div class="col text-end px-0 mb-3">
-                {{ form.submit(class="btn btn-lg btn-primary") }}
+                {{ question_form.submit(class="btn btn-lg btn-primary") }}
             </div>
         </div>
     </form>
@@ -91,6 +108,8 @@
     const imagePreview = document.querySelector('.image-preview');
     const uploadContent = document.querySelector('.upload-content');
     const removeImageBtn = document.getElementById('remove-image');
+    const fileSrcInput = document.getElementById('file_src');
+    const questionForm = document.getElementById('question-form');
     
     // Allowed image types
     const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
@@ -115,6 +134,9 @@
             // Check if file is an image
             if (allowedTypes.includes(file.type)) {
                 displayImage(file);
+                
+                // Don't auto-submit, let the user click the upload button
+                // This ensures the form data is complete when submitted
             } else {
                 alert('Please upload only image files (PNG, JPG, JPEG)');
                 resetFileInput();
@@ -157,6 +179,12 @@
         uploadContent.classList.remove('d-none');
         fileName.textContent = '';
         uploadArea.classList.remove('has-file');
+        
+        // Hide the question form since we don't have an image
+        questionForm.classList.add('d-none');
+        
+        // Clear the file_src input
+        fileSrcInput.value = '';
     }
     
     // Handle remove button click
@@ -197,9 +225,15 @@
         const dt = e.dataTransfer;
         const files = dt.files;
         
-        handleFiles(files);
-        if (allowedTypes.includes(files[0]?.type)) {
-            fileInput.files = files;
+        if (files.length > 0 && allowedTypes.includes(files[0]?.type)) {
+            // Set the file input's files to the dropped files
+            // This is important for the form submission
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(files[0]);
+            fileInput.files = dataTransfer.files;
+            
+            // Display the image
+            handleFiles(files);
         }
     }
 
@@ -290,21 +324,85 @@
     });
 
     // Form submit handler
-    document.querySelector('form').addEventListener('submit', function(e) {
+    document.querySelector('#question-form').addEventListener('submit', function(e) {
         // Make sure any pending input is added as a tag
         if (tagsInput.value.trim() !== '') {
             addTag(tagsInput.value);
         }
-        
-        // Form now submits with the hidden input containing JSON
     });
 
     // Fill automatically button handler
     document.getElementById('fill-automatically').addEventListener('click', function() {
-        // Add your auto-fill functionality here
-        alert('Auto-fill functionality would go here');
-        // Example: document.getElementById('question_text').value = 'Automatically filled question';
+        // Call the API to analyze the image and auto-fill the form
+        const imageUrl = fileSrcInput.value;
+        if (!imageUrl) {
+            alert('Please upload an image first');
+            return;
+        }
+        
+        // Show loading state
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+        this.disabled = true;
+        
+        // You could implement an API call here to analyze the image
+        // For example:
+        /*
+        fetch('/api/analyze_age', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({image_url: imageUrl}),
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('question_text').value = data.question_text;
+            // Add tags
+            data.tags.forEach(tag => addTag(tag));
+            // Set solution
+            document.getElementById('sol').value = data.solution;
+            
+            // Reset button
+            this.innerHTML = 'Fill automatically';
+            this.disabled = false;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to analyze image');
+            
+            // Reset button
+            this.innerHTML = 'Fill automatically';
+            this.disabled = false;
+        });
+        */
+        
+        // For now, just simulate with a timeout
+        setTimeout(() => {
+            alert('Auto-fill functionality would be implemented here');
+            this.innerHTML = 'Fill automatically';
+            this.disabled = false;
+        }, 1500);
     });
+    
+    // Set the file URL if it's passed from the server
+    {% if file_url %}
+        // Set the background image of the upload area
+        uploadArea.style.backgroundImage = `url("{{ file_url }}")`;
+        uploadArea.style.backgroundSize = 'cover';
+        uploadArea.style.backgroundPosition = 'center';
+        
+        // Show the image preview
+        imagePreview.classList.remove('d-none');
+        uploadContent.classList.add('d-none');
+        fileName.textContent = "Uploaded Image";
+        uploadArea.classList.add('has-file');
+        
+        // Set the hidden input value
+        fileSrcInput.value = "{{ file_url }}";
+        
+        // Show the question form
+        questionForm.classList.remove('d-none');
+    {% endif %}
 </script>
 
 <style>

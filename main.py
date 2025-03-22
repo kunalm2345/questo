@@ -1,4 +1,4 @@
-from flask import Flask, render_template, url_for, redirect, request, session
+from flask import Flask, render_template, url_for, redirect, request, session, jsonify
 from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
 from wtforms.validators import DataRequired
 from flask_wtf import FlaskForm
@@ -28,17 +28,95 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'FLASK_SECKEY'
 
 
+# class AddQForm(FlaskForm):
+#     question_file = FileField('Upload Question', validators=[DataRequired()])
+#     question_text = TextAreaField('Question Text', validators=[DataRequired()])
+#     tags = StringField('Tags', validators=[DataRequired()])
+#     sol = TextAreaField('Solution', validators=[DataRequired()])
+#     practice = BooleanField('Set this as a practice question')
+#     submit = SubmitField('Save')
+
+# First form - only for image upload
+class ImageUploadForm(FlaskForm):
+    question_file = FileField('Upload Question Image', validators=[DataRequired()])
+    workspace_id = StringField('Workspace ID', validators=[DataRequired()])
+    submit = SubmitField('Upload Image')
+
+# Second form - modified AddQForm with file_src instead of question_file
 class AddQForm(FlaskForm):
-    question_file = FileField('Upload Question', validators=[DataRequired()])
+    file_src = StringField('Image URL')  # New field to store image URL
     question_text = TextAreaField('Question Text', validators=[DataRequired()])
     tags = StringField('Tags', validators=[DataRequired()])
     sol = TextAreaField('Solution', validators=[DataRequired()])
     practice = BooleanField('Set this as a practice question')
-    submit = SubmitField('Save')
+    submit = SubmitField('Save Question')
 
 class WorkspaceForm(FlaskForm):
     key = StringField('Workspace Key', validators=[DataRequired()])
     submit = SubmitField('Create Workspace')
+
+# Cloudinary setup - add near the top of your application
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+from werkzeug.utils import secure_filename
+import json
+import datetime  # For timestamping uploads
+
+# Initialize Cloudinary
+cloudinary.config(
+    cloud_name = "dvsbq6nfs",
+    api_key = "415791229877485",
+    api_secret = "8-qnUFb2YXotAXgsnMU_t1BPusE"
+)
+
+@app.route('/api/upload_file', methods=['POST'])
+def upload_file():
+    print("Files in request:", request.files)  # Debug line
+    print("Form data:", request.form)  # Debug line
+    
+    if 'question_file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['question_file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    # Get the workspace_id from the form
+    workspace_id = request.form.get('workspace_id')
+    if not workspace_id:
+        return jsonify({'error': 'Missing workspace_id'}), 400
+    
+    # Check file type
+    allowed_extensions = {'png', 'jpg', 'jpeg'}
+    filename = secure_filename(file.filename)
+    file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    
+    if file_ext not in allowed_extensions:
+        return jsonify({'error': 'File type not allowed'}), 400
+    
+    try:
+        # Upload to Cloudinary
+        upload_result = cloudinary.uploader.upload(file, 
+                                                  folder=f"workspace_{workspace_id}",
+                                                  resource_type="image")
+        file_url = upload_result.get('secure_url')
+
+        import llm
+        result = llm.process_image_url_with_genai(file_url, "Respond it in python dictionary type object with three fields: ques_txt (str), tags (list of str), solution (str). DO NOT write any other text before or after this. ques_txt should be the transcription of the question tags should be a list of 1-3 keyword from the question that can help a model to know what its related to. solution should be the solution of the question", llm.api_key, model_name="gemini-2.0-flash")
+        result = result.lstrip('```python').rstrip('```')
+        print("fff", result)
+        print(type(result))
+        result  = eval(result)
+        print("efrdsf", result)
+        print(type(result))
+        # Redirect back to add question page with the URL
+        return redirect(url_for('add_question', 
+                               workspace_id=workspace_id, 
+                               file_url=file_url,
+                               result=result))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
@@ -188,18 +266,60 @@ def workspace_view(workspace_id):
 
     return render_template('workspace_view.html', workspace=workspace, questions=questions)
 
-# Add Question Page
 @app.route('/workspace/<workspace_id>/add-question/', methods=['GET', 'POST'])
-def add_question(workspace_id, methods=['GET','POST']):
-    workspace  = {'name':'csf111', 'members':['1234','5678']}
+def add_question(workspace_id):
+    # Verify workspace exists
+    workspace = work_coll.find_one({"key": workspace_id})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
     if 'id' not in session:
-        return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
+        return redirect(url_for('signin'))
+    
+    # Create both forms
+    image_form = ImageUploadForm()
+    question_form = AddQForm()
+    
+    # Check if we have a file_url from the upload endpoint
+    file_url = request.args.get('file_url')
+    if file_url:
+        question_form.file_src.data = file_url
 
-    form = AddQForm()
-    #if form.validate_on_submit():
-        #{"id":"1235", "sol":form.sol.data, "tags":form.tags.data, "question_file":form.question_file.data, "practice":form.practice.data})
-
-    return render_template('add_question.html', workspace=workspace, form=form)
+    if request.args.get('result'):
+        result = request.args.get('result')
+        print("result", result, type(result))
+        # result = eval(result)
+        question_form.question_text.data = result.get('ques_txt', '')
+        question_form.tags.data = result.get('tags', [])
+        question_form.sol.data = result.get('solution', '')
+    
+    # Handle main form submission (after image is uploaded)
+    if request.method == 'POST' and question_form.validate_on_submit():
+        # Parse tags from JSON string
+        try:
+            tags_list = json.loads(question_form.tags.data)
+        except:
+            tags_list = []  # Default to empty list if parsing fails
+            
+        # Save question to database
+        question = {
+            "workspace_id": workspace_id,
+            "file_src": question_form.file_src.data,
+            "ques_txt": question_form.question_text.data,
+            "tags": tags_list,
+            "sol": question_form.sol.data,
+            "practice": question_form.practice.data,
+        }
+        q_coll.insert_one(question)
+        return redirect(url_for('workspace_view', workspace_id=workspace_id))
+    
+    return render_template(
+        'add_question.html', 
+        workspace=workspace,
+        image_form=image_form, 
+        question_form=question_form,
+        file_url=file_url
+    )
 
 # Create Question Paper Page
 @app.route('/workspace/<workspace_id>/create-qp/', methods=['GET', 'POST'])
@@ -310,7 +430,7 @@ def edit_question(workspace_id, question_id):
     return f"Edit question {question_id} in {workspace_id}"  # Replace with actual functionality
 
 
-@app.route('/create_workspace', methods=['POST'])
+@app.route('/create_workspace/', methods=['POST'])
 def create_workspace():
     # Ensure the user is logged in
     if 'id' not in session:
