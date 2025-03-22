@@ -27,11 +27,12 @@ def index():
 
 @app.route('/signin/', methods=['GET','POST'])
 def signin():
-    session['id'] = '123'
-    session['email'] = 'kunalm2345@gmail.com'
-    session['name'] = 'Kunal'
-    session['workspace'] = ['csf111', 'csf222']  # Dummy workspaces
-    return redirect(url_for('workspaces'))
+    # session['id'] = '123'
+    # session['email'] = 'kunalm2345@gmail.com'
+    # session['name'] = 'Kunal'
+    # session['workspace'] = ['csf111', 'csf222']  # Dummy workspaces
+    # return redirect(url_for('workspaces'))
+    return 0
 
 @app.route('/workspaces/')
 def workspaces():
