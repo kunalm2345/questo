@@ -1,4 +1,7 @@
 from flask import Flask, render_template, url_for, redirect, request, session
+from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
+from wtforms.validators import DataRequired
+from flask_wtf import FlaskForm
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
@@ -35,6 +38,8 @@ class AddQForm(FlaskForm):
 
 @app.route('/')
 def index():
+    if session.get('id'):
+        return redirect(url_for('workspaces'))
     return render_template('landing.html')
 
 
@@ -143,7 +148,7 @@ def workspace_view(workspace_id):
     # Find the workspace by ID
     workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        return "Error: Workspace not found!", 404
+        return redirect(url_for('workspaces'))  # Redirect if workspace not found
 
     # Find questions associated with the workspace
     questions = list(q_coll.find({"workspace_id": ObjectId(workspace_id)}))
@@ -153,20 +158,16 @@ def workspace_view(workspace_id):
     # Ensure workspace ID is converted to string for consistency
     workspace['id'] = str(workspace['_id'])
 
-@app.route('/workspace/<workspace_id>/')
-def workspace_view(workspace_id):
-    global questions
-    if session.get('id') is None:
-        return redirect(url_for('index'))  # Redirect if not logged in
-
     # Sample questions (Replace with DB query)
-    questions = [
-        {"id": 1, "ques_txt": "What is O(n) complexity?"},
-        {"id": 2, "ques_txt": "Explain binary search."},
-        {"id": 3, "ques_txt": "Difference between list and tuple?"}
-    ]
+    # questions = [
+    #     {"id": 1, "ques_txt": "What is O(n) complexity?"},
+    #     {"id": 2, "ques_txt": "Explain binary search."},
+    #     {"id": 3, "ques_txt": "Difference between list and tuple?"}
+    # ]
+    print(workspace)
+    print(questions)
 
-    workspace  = {'name':'csf111', 'members':['1234','5678']}
+    # workspace  = {'name':'csf111', 'members':['1234','5678']}
     return render_template('workspace_view.html', workspace=workspace, questions=questions)
 
 # Add Question Page
