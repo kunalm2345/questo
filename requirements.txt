@@ -2,3 +2,5 @@ flask
 wtforms
 flask-wtf
 pymongo
+google-generativeai
+Pillow

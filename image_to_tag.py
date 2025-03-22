@@ -12,34 +12,6 @@ def image_to_base64(image_path):
     except FileNotFoundError:
         return None
 
-def process_image_with_genai(image_path, prompt, api_key, model_name="gemini-2.0-flash"):
-    """Sends an image and prompt to Google Generative AI and returns the response."""
-    base64_image = image_to_base64(image_path)
-    if not base64_image:
-        return "Error: Image not found."
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name)
-
-    img_data = {
-        "mime_type": "image/jpeg",
-        "data": base64_image
-    }
-
-    try:
-        response = model.generate_content([prompt, img_data])
-        # Raise an exception for bad responses
-        return response.text
-    except Exception as e:
-        return f"Error: {e}"
-
-# Example usage (replace with your actual API key and image path):
-api_key = "AIzaSyDbrnnngoB8LueKwsDG6qOM2R0JLMzVoLM"  # Replace with your actual API key
-image_path = "q3.jpg"  # Replace with your image path
-prompt = "Describe what is in this image."
-
-result = process_image_with_genai(image_path, prompt, api_key)
-print(result)
 
 # Example using a URL instead of a local file.
 def process_image_url_with_genai(image_url, prompt, api_key, model_name="gemini-2.0-flash"):
@@ -73,8 +45,8 @@ def process_image_url_with_genai(image_url, prompt, api_key, model_name="gemini-
 
 # Example usage with image url.
 import requests #added this import.
-image_url = "https://www.easygifanimator.net/images/samples/video-to-gif-sample.gif"  # Example image url.
+image_url = "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fi.pinimg.com%2F736x%2Fe0%2Fb8%2F17%2Fe0b8173b2853595a32fa432f2711aa0a.jpg&f=1&nofb=1&ipt=4530884c67a239533acf80977161b0adce9a419ea2b2965080a4af0b5ec4b3ce&ipo=images"  # Example image url.
 api_key = "AIzaSyDbrnnngoB8LueKwsDG6qOM2R0JLMzVoLM" #replace with your api key
-prompt = "Transcribe this image."
+prompt = "Transcribe this image to extract only the question and its choices. and generate 5 or fewer tags appropriate from the transcription(do not include tags such as quizz,test, and other test names or vague tags) "
 result2 = process_image_url_with_genai(image_url, prompt, api_key)
 print(result2)
