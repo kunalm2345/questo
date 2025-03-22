@@ -1,45 +1,123 @@
 {% extends "base.html" %}
 
-{% block title %}Workspace - {{ workspace.name }}{% endblock %}
+{% block title %}Workspace - {{ workspace_id }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
-    <!-- Workspace Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>{{ workspace.name }}</h1>
-        <a href="{{ url_for('workspaces') }}" class="btn btn-secondary">Back to Workspaces</a>
+    <!-- Header with workspace name and action buttons -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
+        <h1 class="h3 mb-3 mb-md-0">{{ workspace_id }}</h1>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">LOGOUT</a>
+            <a href="{{ url_for('add_question', workspace_id=workspace_id) }}" class="btn btn-primary">ADD QUESTION</a>
+            <a href="{{ url_for('create_qp', workspace_id=workspace_id) }}" class="btn btn-primary">CREATE QP</a>
+            <a href="{{ url_for('practice_questions', workspace_id=workspace_id) }}" class="btn btn-primary">PRACTICE Qs</a>
+        </div>
     </div>
-    <p>{{ workspace.description }}</p>
 
-    <!-- Add Question Section -->
-    <div class="mt-4">
-        <h3>Add a Question</h3>
-        <form action="{{ url_for('add_question', workspace_id=workspace.id) }}" method="POST">
-            <div class="mb-3">
-                <label for="questionText" class="form-label">Question Text</label>
-                <input type="text" class="form-control" id="questionText" name="question_text" required>
-            </div>
-            <button type="submit" class="btn btn-primary">Add Question</button>
-        </form>
+    <!-- Search Box with input group -->
+    <div class="mb-4">
+        <div class="input-group">
+            <input type="text" class="form-control" placeholder="Search by text, tags, or ID...">
+            <button class="btn btn-primary" type="button">Search</button>
+        </div>
     </div>
 
     <!-- Questions List -->
-    <div class="mt-5">
-        <h3>Questions</h3>
-        {% if questions and questions|length > 0 %}
-            <ul class="list-group">
-                {% for question in questions %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        {{ question.text }}
-                        <form action="{{ url_for('delete_question', question_id=question.id, workspace_id=workspace.id) }}" method="POST" class="m-0">
-                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                        </form>
-                    </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p class="text-muted">No questions added yet. Add your first question above!</p>
-        {% endif %}
+    {% if questions %}
+    <div class="row row-cols-1 row-cols-lg-2 g-4">
+        {% for question in questions %}
+        <div class="col">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <!-- Question ID in corner and practice badge -->
+                    <div class="d-flex justify-content-between mb-2">
+                        <small class="text-muted">ID: {{ question.id }}</small>
+                        {% if question.isPractice %}
+                        <span class="badge bg-success">Practice</span>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Question text with overflow handling -->
+                    <h5 class="card-title" style="overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+                        {{ question.ques_txt }}
+                    </h5>
+                    
+                    <!-- Tags -->
+                    <div class="mb-3">
+                        {% for tag in question.tags %}
+                        <span class="badge bg-light text-dark me-1 mb-1">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                    
+                    <!-- Action buttons -->
+                    <div class="d-flex justify-content-end">
+                        <a href="{{ url_for('edit_question', workspace_id=workspace_id, question_id=question.id) }}" class="btn btn-outline-primary btn-sm me-2">
+                            Edit
+                        </a>
+                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="offcanvas" data-bs-target="#detailsCanvas{{ loop.index }}">
+                            Details
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Offcanvas for details -->
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="detailsCanvas{{ loop.index }}" aria-labelledby="detailsCanvas{{ loop.index }}Label">
+            <div class="offcanvas-header">
+                <h5 class="offcanvas-title" id="detailsCanvas{{ loop.index }}Label">Question Details</h5>
+                <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body">
+                <small class="text-muted d-block mb-3">ID: {{ question.id }}</small>
+                
+                <!-- Question image if available -->
+                {% if question.image_src %}
+                <div class="mb-4">
+                    <img src="{{ question.image_src }}" class="img-fluid rounded" alt="Question image">
+                </div>
+                {% endif %}
+                
+                <div class="mb-4">
+                    <h5 class="fw-bold">Question:</h5>
+                    <p>{{ question.ques_txt }}</p>
+                </div>
+                
+                <div class="mb-4">
+                    <h5 class="fw-bold">Solution:</h5>
+                    <p>{{ question.solutions }}</p>
+                </div>
+                
+                <div class="mb-3">
+                    <h5 class="fw-bold">Tags:</h5>
+                    <div>
+                        {% for tag in question.tags %}
+                        <span class="badge bg-light text-dark me-1 mb-1">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                {% if question.isPractice %}
+                <div class="mt-4">
+                    <span class="badge bg-success">Practice Question</span>
+                </div>
+                {% endif %}
+                
+                <div class="mt-4">
+                    <a href="{{ url_for('edit_question', workspace_id=workspace_id, question_id=question.id) }}" class="btn btn-primary">
+                        Edit Question
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
     </div>
+    {% else %}
+    <div class="alert alert-info">
+        No questions found in this workspace. 
+        <a href="{{ url_for('add_question', workspace_id=workspace_id) }}" class="alert-link">Add your first question</a>.
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
