@@ -148,7 +148,6 @@ def workspace_view(workspace_id):
     return render_template('workspace_view.html', workspace=workspace, questions=questions)
 
 
-
 @app.route('/workspace/<workspace_id>/add_question', methods=['POST'])
 def add_question(workspace_id):
     if 'id' not in session:

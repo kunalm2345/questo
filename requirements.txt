@@ -3,3 +3,5 @@ wtforms
 flask-wtf
 pymongo
 requests
+google-generativeai
+Pillow
