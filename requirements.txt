@@ -2,6 +2,11 @@ flask
 wtforms
 flask-wtf
 pymongo
+faiss-cpu
+langchain-community
+langchain-huggingface
+sentence-transformers
+langchain_mistralai
 requests
 google-generativeai
 Pillow
