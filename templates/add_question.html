@@ -3,51 +3,375 @@
 {% block title %}Add Question - {{ workspace_id }}{% endblock %}
 
 {% block content %}
-
-
 <div class="container py-4">
+<div class="row justify-content-center">
+<div class="col-md-6">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h3">Adding a New Question</h1>
-        <a href="{{ url_for('logout') }}" class="btn btn-secondary">LOGOUT</a>
     </div>
 
-    <form method="POST" enctype="multipart/form-data">
+    <form method="POST" enctype="multipart/form-data" class="d-flex flex-column align-items-center">
         {{ form.hidden_tag() }}
+
+        <!-- Modern image upload area -->
+        <div class="mb-3 w-100">
+            <div class="upload-area p-5 border rounded bg-light text-center position-relative" id="upload-area">
+                <div class="upload-content">
+                    <i class="bi bi-image fs-1 mb-2"></i>
+                    <p>Drag and drop an image file (PNG, JPG, JPEG) or click to browse</p>
+                    {{ form.question_file(class="d-none", id="question_file", accept=".png,.jpg,.jpeg") }}
+                </div>
+                <div class="image-preview d-none position-absolute top-0 start-0 w-100 h-100">
+                    <div class="image-overlay position-absolute top-0 start-0 w-100 h-100"></div>
+                    <div class="position-absolute bottom-0 start-0 w-100 p-2 d-flex justify-content-between align-items-center">
+                        <span id="file-name" class="text-white mx-1 bg-gray"></span>
+                        <button type="button" class="btn btn-sm btn-danger remove-image" id="remove-image">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
         
-        <p>
-            {{ form.question_file.label }}
-            <br>
-            {{ form.question_file() }}
-        </p>
-
-        <p>
-            {{ form.tags.label }}
-            <br>
-            {{ form.tags(placeholder="Enter a tag") }}
-        </p>
-
-        <p>
-            {{ form.sol.label }}
-            <br>
-            {{ form.sol(placeholder="Enter solution") }}
-        </p>
-
-        <p>
-            {{ form.practice() }} {{ form.practice.label }}
-        </p>
-
-        <p>{{ form.submit(class="btn btn-primary") }}</p>
-    </form
+        <!-- Fill automatically button with dividers -->
+        <div class="d-flex align-items-center mb-3 w-100">
+            <hr class="flex-grow-1 me-3">
+            <button type="button" id="fill-automatically" class="btn btn-outline-secondary">Fill automatically</button>
+            <span class="mx-2 text-muted">or enter manually</span>
+            <hr class="flex-grow-1 ms-3">
+        </div>
+        
+        <!-- New question text field with floating label -->
+        <div class="form-floating mb-3 w-100">
+            {{ form.question_text(class="form-control", placeholder="Enter question text", style="height: 150px", id="question_text") }}
+            {{ form.question_text.label(for="question_text") }}
+        </div>
+        
+        <!-- Hidden tags field for form submission -->
+        {{ form.tags(class="d-none", id="tags_hidden") }}
+        
+        <!-- Custom tags input with pills/badges -->
+        <div class="mb-3 w-100">
+            <label for="tags_input" class="form-label">Tags</label>
+            <div class="tags-input-wrapper form-control p-2" id="tags-container">
+                <div class="tags-list d-flex flex-wrap gap-2 mb-1"></div>
+                <input type="text" class="tags-input border-0 w-auto flex-grow-1 ms-2" id="tags_input" placeholder="Enter tags and press Enter or comma">
+            </div>
+            <div class="form-text">Press Enter or comma to add a tag</div>
+        </div>
+        
+        <!-- Solution field with floating label -->
+        <div class="form-floating mb-3 w-100 ">
+            {{ form.sol(class="form-control", placeholder="Enter solution", id="sol") }}
+            {{ form.sol.label(for="sol") }}
+        </div>
+        
+        <div class="row w-100 justify-content-between align-items-center">
+            <!-- Practice checkbox -->
+            <div class="col form-check mb-3">
+                {{ form.practice(class="form-check-input me-2") }} 
+                {{ form.practice.label(class="form-check-label") }}
+            </div>
+            
+            <!-- Submit button -->
+            <div class="col text-end px-0 mb-3">
+                {{ form.submit(class="btn btn-lg btn-primary") }}
+            </div>
+        </div>
+    </form>
+</div>
+</div>
 </div>
 
 <script>
-    document.getElementById("question_image").addEventListener("change", function() {
-        let label = document.querySelector("label[for='question_image']");
-        if (this.files.length > 0) {
-            label.innerHTML = this.files[0].name; // Show selected file name
-        } else {
-            label.innerHTML = "Click to upload";
+    // File upload handling
+    const uploadArea = document.getElementById('upload-area');
+    const fileInput = document.getElementById('question_file');
+    const fileName = document.getElementById('file-name');
+    const imagePreview = document.querySelector('.image-preview');
+    const uploadContent = document.querySelector('.upload-content');
+    const removeImageBtn = document.getElementById('remove-image');
+    
+    // Allowed image types
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    
+    // Click on upload area to trigger file input
+    uploadArea.addEventListener('click', function(e) {
+        if (e.target !== removeImageBtn && !removeImageBtn.contains(e.target)) {
+            fileInput.click();
         }
     });
+    
+    // Handle file selection
+    fileInput.addEventListener('change', function() {
+        handleFiles(this.files);
+    });
+    
+    // Handle file validation and display
+    function handleFiles(files) {
+        if (files.length > 0) {
+            const file = files[0];
+            
+            // Check if file is an image
+            if (allowedTypes.includes(file.type)) {
+                displayImage(file);
+            } else {
+                alert('Please upload only image files (PNG, JPG, JPEG)');
+                resetFileInput();
+            }
+        } else {
+            resetPreview();
+        }
+    }
+    
+    // Display image as background
+    function displayImage(file) {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            // Set background image
+            uploadArea.style.backgroundImage = `url(${e.target.result})`;
+            uploadArea.style.backgroundSize = 'cover';
+            uploadArea.style.backgroundPosition = 'center';
+            
+            // Show overlay and file name
+            imagePreview.classList.remove('d-none');
+            uploadContent.classList.add('d-none');
+            fileName.textContent = file.name;
+            uploadArea.classList.add('has-file');
+        };
+        
+        reader.readAsDataURL(file);
+    }
+    
+    // Reset file input and preview
+    function resetFileInput() {
+        fileInput.value = '';
+        resetPreview();
+    }
+    
+    // Reset preview elements
+    function resetPreview() {
+        uploadArea.style.backgroundImage = '';
+        imagePreview.classList.add('d-none');
+        uploadContent.classList.remove('d-none');
+        fileName.textContent = '';
+        uploadArea.classList.remove('has-file');
+    }
+    
+    // Handle remove button click
+    removeImageBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        resetFileInput();
+    });
+    
+    // Handle drag and drop
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+        uploadArea.classList.add('highlight');
+    }
+    
+    function unhighlight() {
+        uploadArea.classList.remove('highlight');
+    }
+    
+    uploadArea.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        handleFiles(files);
+        if (allowedTypes.includes(files[0]?.type)) {
+            fileInput.files = files;
+        }
+    }
+
+    // Tags input handling
+    const tagsInput = document.getElementById('tags_input');
+    const tagsContainer = document.getElementById('tags-container');
+    const tagsList = document.querySelector('.tags-list');
+    const hiddenTagsInput = document.getElementById('tags_hidden');
+    let tags = [];
+
+    // Function to create a new tag
+    function createTag(label) {
+        const tag = document.createElement('span');
+        tag.setAttribute('class', 'badge bg-primary d-flex align-items-center gap-1');
+        tag.textContent = label;
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.setAttribute('type', 'button');
+        closeBtn.setAttribute('class', 'btn-close btn-close-white p-0');
+        closeBtn.setAttribute('aria-label', 'Remove ' + label);
+        closeBtn.style.fontSize = '0.6rem';
+        
+        closeBtn.addEventListener('click', function() {
+            removeTag(label);
+        });
+        
+        tag.appendChild(closeBtn);
+        return tag;
+    }
+
+    // Function to add a tag
+    function addTag(text) {
+        // Trim and ensure non-empty tag
+        const trimmedText = text.trim();
+        if (trimmedText === '' || tags.includes(trimmedText)) {
+            return;
+        }
+        
+        // Add tag to array and UI
+        tags.push(trimmedText);
+        tagsList.appendChild(createTag(trimmedText));
+        updateHiddenInput();
+        
+        // Clear input
+        tagsInput.value = '';
+    }
+
+    // Function to remove a tag
+    function removeTag(text) {
+        // Remove from array
+        tags = tags.filter(tag => tag !== text);
+        
+        // Remove from UI
+        const tagElements = tagsList.querySelectorAll('.badge');
+        tagElements.forEach(tag => {
+            if (tag.textContent.replace(/×/, '').trim() === text) {
+                tag.remove();
+            }
+        });
+        
+        updateHiddenInput();
+    }
+
+    // Function to update the hidden input with JSON value
+    function updateHiddenInput() {
+        hiddenTagsInput.value = JSON.stringify(tags);
+    }
+
+    // Event listener for input
+    tagsInput.addEventListener('keydown', function(e) {
+        // Add tag on Enter or comma
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            addTag(this.value);
+        }
+    });
+
+    // Also add tag when input loses focus
+    tagsInput.addEventListener('blur', function() {
+        if (this.value.trim() !== '') {
+            addTag(this.value);
+        }
+    });
+
+    // Click on container focuses the input
+    tagsContainer.addEventListener('click', function() {
+        tagsInput.focus();
+    });
+
+    // Form submit handler
+    document.querySelector('form').addEventListener('submit', function(e) {
+        // Make sure any pending input is added as a tag
+        if (tagsInput.value.trim() !== '') {
+            addTag(tagsInput.value);
+        }
+        
+        // Form now submits with the hidden input containing JSON
+    });
+
+    // Fill automatically button handler
+    document.getElementById('fill-automatically').addEventListener('click', function() {
+        // Add your auto-fill functionality here
+        alert('Auto-fill functionality would go here');
+        // Example: document.getElementById('question_text').value = 'Automatically filled question';
+    });
 </script>
+
+<style>
+    /* Styles for the upload area */
+    .upload-area {
+        cursor: pointer;
+        transition: all 0.3s;
+        min-height: 150px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .upload-area:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .upload-area.highlight {
+        background-color: #e9ecef !important;
+        border-color: #007bff !important;
+    }
+    
+    .upload-area.has-file {
+        background-color: transparent !important;
+    }
+    
+    /* Styles for image preview */
+    .image-overlay {
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .image-info {
+        background-color: rgba(0, 0, 0, 0.7);
+    }
+    
+    /* Ensure the textarea has adequate height for multiline text */
+    .form-floating textarea.form-control {
+        height: 150px;
+    }
+    
+    /* Remove button styles */
+    .remove-image {
+        z-index: 5;
+    }
+
+    /* Tags input styles */
+    .tags-input-wrapper {
+        min-height: 38px;
+        cursor: text;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    
+    .tags-input {
+        outline: none !important;
+        box-shadow: none !important;
+        flex: 1;
+        min-width: 100px;
+    }
+    
+    .tags-input:focus {
+        outline: none;
+    }
+    
+    .badge .btn-close {
+        width: 0.5rem;
+        height: 0.5rem;
+    }
+</style>
 {% endblock %}

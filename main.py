@@ -16,6 +16,7 @@ app.config['SECRET_KEY'] = 'FLASK_SECKEY'
 
 class AddQForm(FlaskForm):
     question_file = FileField('Upload Question', validators=[DataRequired()])
+    question_text = TextAreaField('Question Text', validators=[DataRequired()])
     tags = StringField('Tags', validators=[DataRequired()])
     sol = TextAreaField('Solution', validators=[DataRequired()])
     practice = BooleanField('Set this as a practice question')
@@ -66,16 +67,18 @@ def workspace_view(workspace_id):
 
     # Sample questions (Replace with DB query)
     questions = [
-        {"id": 1, "text": "What is O(n) complexity?"},
-        {"id": 2, "text": "Explain binary search."},
-        {"id": 3, "text": "Difference between list and tuple?"}
+        {"id": 1, "ques_txt": "What is O(n) complexity?"},
+        {"id": 2, "ques_txt": "Explain binary search."},
+        {"id": 3, "ques_txt": "Difference between list and tuple?"}
     ]
 
-    return render_template('workspace_view.html', workspace_id=workspace_id, questions=questions)
+    workspace  = {'name':'csf111', 'members':['1234','5678']}
+    return render_template('workspace_view.html', workspace=workspace, questions=questions)
 
 # Add Question Page
 @app.route('/workspace/<workspace_id>/add-question/', methods=['GET', 'POST'])
 def add_question(workspace_id, methods=['GET','POST']):
+    workspace  = {'name':'csf111', 'members':['1234','5678']}
     if 'id' not in session or 'workspace' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
 
@@ -84,7 +87,7 @@ def add_question(workspace_id, methods=['GET','POST']):
         #{"id":"1235", "sol":form.sol.data, "tags":form.tags.data, "question_file":form.question_file.data, "practice":form.practice.data})
 
 
-    return render_template('add_question.html', workspace_id=workspace_id, form=form)
+    return render_template('add_question.html', workspace=workspace, form=form)
 
 # Create Question Paper Page
 @app.route('/workspace/<workspace_id>/create-qp/', methods=['GET', 'POST'])
@@ -103,9 +106,9 @@ def create_qp(workspace_id):
         selected_questions = request.form.getlist('selected_questions')
         session['question_paper'] = selected_questions  # Store selected questions
         session.modified = True
-        return redirect(url_for('workspace_view', workspace_id=workspace_id))  # Redirect after saving
+        return redirect(url_for('workspace_view', workspace=workspace))  # Redirect after saving
 
-    return render_template('create_qp.html', workspace_id=workspace_id, questions=questions)
+    return render_template('create_qp.html', workspace=workspace, questions=questions)
 
 @app.route('/workspace/<workspace_id>/question-paper/', methods=['GET', 'POST'])
 def preview_qp(workspace_id):
@@ -122,7 +125,7 @@ def preview_qp(workspace_id):
         session['question_paper'][workspace_id] = question_paper
         session.modified = True
 
-    return render_template('preview_qp.html', workspace_id=workspace_id, question_paper=question_paper)
+    return render_template('preview_qp.html', workspace=workspace, question_paper=question_paper)
 
 @app.route('/workspace/<workspace_id>/download-qp/')
 def download_qp(workspace_id):
