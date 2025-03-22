@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Practice Questions - {{ workspace.name }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">Practice Questions</h1>
+        <a href="{{ url_for('workspace_view', workspace_id=workspace.id) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Workspace
+        </a>
+    </div>
+
+    <!-- Search Form -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('practice_questions', workspace_id=workspace.id) }}">
+                <div class="mb-3">
+                    <label for="searchTags" class="form-label">Search by Tags</label>
+                    <input type="text" class="form-control" id="searchTags" name="tags" 
+                           placeholder="Enter tags separated by commas (e.g., algorithms, sorting, recursion)" 
+                           value="{{ request.args.get('tags', '') }}">
+                    <div class="form-text">Enter multiple tags separated by commas to search</div>
+                </div>
+                <button type="submit" class="btn btn-primary">Search</button>
+                {% if request.args.get('tags') %}
+                    <a href="{{ url_for('practice_questions', workspace_id=workspace.id) }}" class="btn btn-outline-secondary ms-2">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Questions Display -->
+    {% if questions %}
+        <div class="row row-cols-1 row-cols-lg-2 g-4">
+            {% for question in questions %}
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <!-- Question ID and badges -->
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">ID: {{ question.id }}</small>
+                            <span class="badge bg-success">Practice</span>
+                        </div>
+                        
+                        <!-- Question text -->
+                        <h5 class="card-title" style="overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+                            {{ question.ques_txt }}
+                        </h5>
+                        
+                        <!-- Tags -->
+                        <div class="mb-3">
+                            {% for tag in question.tags %}
+                            <span class="badge bg-light text-dark me-1 mb-1">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- Show details button -->
+                        <div class="d-flex justify-content-end">
+                            <button class="btn btn-primary btn-sm" 
+                                    data-bs-toggle="collapse" 
+                                    data-bs-target="#solutionCollapse{{ loop.index }}" 
+                                    aria-expanded="false">
+                                Show Solution
+                            </button>
+                        </div>
+                        
+                        <!-- Collapsible solution -->
+                        <div class="collapse mt-3" id="solutionCollapse{{ loop.index }}">
+                            <div class="card card-body bg-light">
+                                <h6 class="fw-bold">Solution:</h6>
+                                <p>{{ question.solutions }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            {% if request.args.get('tags') %}
+                No practice questions found matching your search.
+                <a href="{{ url_for('practice_questions', workspace_id=workspace.id) }}" class="alert-link">View all practice questions</a>.
+            {% else %}
+                No practice questions available for this workspace yet.
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

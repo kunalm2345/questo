@@ -186,7 +186,6 @@ def workspace_view(workspace_id):
     #     {"id": 3, "ques_txt": "Difference between list and tuple?"}
     # ]
 
-    # workspace  = {'name':'csf111', 'members':['1234','5678']}
     return render_template('workspace_view.html', workspace=workspace, questions=questions)
 
 # Add Question Page
@@ -200,14 +199,21 @@ def add_question(workspace_id, methods=['GET','POST']):
     #if form.validate_on_submit():
         #{"id":"1235", "sol":form.sol.data, "tags":form.tags.data, "question_file":form.question_file.data, "practice":form.practice.data})
 
-
     return render_template('add_question.html', workspace=workspace, form=form)
 
 # Create Question Paper Page
 @app.route('/workspace/<workspace_id>/create-qp/', methods=['GET', 'POST'])
 def create_qp(workspace_id):
-    if 'id' not in session or 'workspace' not in session:
+    if 'id' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
+
+    # Find the workspace by ID
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))  # Redirect if workspace not found
+    
+    # Convert ObjectId to string for the template
+    workspace['id'] = str(workspace['_id'])
 
     # Retrieve existing questions for the workspace
     if 'questions' not in session:
@@ -220,14 +226,22 @@ def create_qp(workspace_id):
         selected_questions = request.form.getlist('selected_questions')
         session['question_paper'] = selected_questions  # Store selected questions
         session.modified = True
-        return redirect(url_for('workspace_view', workspace=workspace))  # Redirect after saving
+        return redirect(url_for('workspace_view', workspace_id=workspace_id))  # Redirect after saving
 
     return render_template('create_qp.html', workspace=workspace, questions=questions)
 
 @app.route('/workspace/<workspace_id>/question-paper/', methods=['GET', 'POST'])
 def preview_qp(workspace_id):
-    if 'id' not in session or 'workspace' not in session:
+    if 'id' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
+
+    # Find the workspace by ID
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))  # Redirect if workspace not found
+    
+    # Convert ObjectId to string for the template
+    workspace['id'] = str(workspace['_id'])
 
     # Retrieve selected questions from session
     question_paper = session.get('question_paper', {}).get(workspace_id, [])
@@ -252,7 +266,43 @@ def download_ans_key(workspace_id):
 # Practice Questions Page
 @app.route('/workspace/<workspace_id>/practice/')
 def practice_questions(workspace_id):
-    return f"Practice questions for workspace {workspace_id}"  # Replace with actual functionality
+    # Check if the user is logged in
+    if 'id' not in session:
+        return redirect(url_for('index'))
+    
+    # Find the workspace by ID
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))  # Redirect if workspace not found
+    
+    # Convert ObjectId to string for the template
+    workspace['id'] = str(workspace['_id'])
+    
+    # Get search tags from the query parameters
+    search_tags = request.args.get('tags', '')
+    
+    # Build the query
+    query = {
+        "workspace_id": ObjectId(workspace_id),
+        "isPractice": True  # Only get questions marked as practice
+    }
+    
+    # Add tag filtering if search tags were provided
+    if search_tags:
+        # Split the tags by commas and strip whitespace
+        tags_list = [tag.strip().lower() for tag in search_tags.split(',') if tag.strip()]
+        if tags_list:
+            # Use $in operator for OR logic - match ANY of the provided tags
+            query["tags"] = {"$in": tags_list}
+    
+    # Find questions that match the query
+    questions = list(q_coll.find(query))
+    
+    # Convert ObjectIds to strings for the template
+    for question in questions:
+        question['id'] = str(question['_id'])
+    
+    return render_template('practice_questions.html', workspace=workspace, questions=questions)
 
 # Edit Question Page
 @app.route('/workspace/<workspace_id>/edit/<question_id>/')

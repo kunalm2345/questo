@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Workspace - {{ workspace_id }}{% endblock %}
+{% block title %}Workspace - {{ workspace.name }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
     <!-- Header with workspace name and action buttons -->
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
-        <h1 class="h3 mb-3 mb-md-0">{{ workspace_id }}</h1>
+        <h1 class="h3 mb-3 mb-md-0">{{ workspace.name }}</h1>
         <div class="d-flex flex-wrap gap-2">
             <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">LOGOUT</a>
             <a href="{{ url_for('add_question', workspace_id=workspace['key']) }}" class="btn btn-primary">ADD QUESTION</a>
@@ -52,7 +52,7 @@
                     
                     <!-- Action buttons -->
                     <div class="d-flex justify-content-end">
-                        <a href="{{ url_for('edit_question', workspace_id=workspace_id, question_id=question.id) }}" class="btn btn-outline-primary btn-sm me-2">
+                        <a href="{{ url_for('edit_question', workspace_id=workspace.id, question_id=question.id) }}" class="btn btn-outline-primary btn-sm me-2">
                             Edit
                         </a>
                         <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="offcanvas" data-bs-target="#detailsCanvas{{ loop.index }}">
@@ -105,7 +105,7 @@
                 {% endif %}
                 
                 <div class="mt-4">
-                    <a href="{{ url_for('edit_question', workspace_id=workspace_id, question_id=question.id) }}" class="btn btn-primary">
+                    <a href="{{ url_for('edit_question', workspace_id=workspace.id, question_id=question.id) }}" class="btn btn-primary">
                         Edit Question
                     </a>
                 </div>
@@ -116,7 +116,7 @@
     {% else %}
     <div class="alert alert-info">
         No questions found in this workspace. 
-        <a href="{{ url_for('add_question', workspace_id=workspace_id) }}" class="alert-link">Add your first question</a>.
+        <a href="{{ url_for('add_question', workspace_id=workspace.id) }}" class="alert-link">Add your first question</a>.
     </div>
     {% endif %}
 </div>
