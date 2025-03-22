@@ -2,6 +2,14 @@ from flask import Flask, render_template, url_for, redirect, request, session
 from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
 from wtforms.validators import DataRequired
 from flask_wtf import FlaskForm
+from pymongo import MongoClient
+
+# MongoDB connection (replace with your actual connection string)
+client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
+db_qp = client['QuestionPapers']
+db_questions = client['Questions']
+db_users = client['Users']
+db_worksapces = client['Workspaces']
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'FLASK_SECKEY'
