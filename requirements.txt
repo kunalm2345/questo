@@ -2,4 +2,11 @@ flask
 wtforms
 flask-wtf
 pymongo
-!pip install --quiet faiss-cpu langchain-community langchain-huggingface sentence-transformers langchain_mistralai
+faiss-cpu
+langchain-community
+langchain-huggingface
+sentence-transformers
+langchain_mistralai
+requests
+google-generativeai
+Pillow
