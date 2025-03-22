@@ -20,13 +20,10 @@
         {% if workspaces and workspaces|length > 0 %}
             {% for workspace in workspaces %}
             <div class="col">
-                <a href="{{ url_for('workspace_view', workspace_id=workspace.id) }}" class="text-decoration-none">
+                <a href="{{ url_for('workspace_view', workspace_id=workspace.key) }}" class="text-decoration-none">
                     <div class="card h-100 shadow-sm">
                         <div class="card-body">
-                            <h5 class="card-title">{{ workspace.name }}</h5>
-                            <p class="card-text text-muted">
-                                {{ workspace.description }}
-                            </p>
+                            <h5 class="card-title">{{ workspace.key }}</h5>
                         </div>
                     </div>
                 </a>
@@ -53,17 +50,25 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <!-- Modal Form -->
-            <form action="{{ url_for('create_workspace') }}" method="POST">
+            <form method="POST">
+                {{ form.hidden_tag() }}
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="workspaceName" class="form-label">Workspace Name</label>
-                        <input type="text" class="form-control" id="workspaceName" name="workspace_name" placeholder="Enter workspace name" required>
+                    <div class="form-floating mb-3">
+                        {{ form.key(class="form-control", id="workspaceName", placeholder="Workspace Name") }}
+                        {{ form.key.label(for="workspaceName", class="form-label") }}
+                        {% if form.key.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.key.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
                     </div>
                 </div>
                 <!-- Modal Footer -->
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Workspace</button>
+                    {{ form.submit(class="btn btn-primary") }}
                 </div>
             </form>
         </div>

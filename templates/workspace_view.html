@@ -9,9 +9,9 @@
         <h1 class="h3 mb-3 mb-md-0">{{ workspace_id }}</h1>
         <div class="d-flex flex-wrap gap-2">
             <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">LOGOUT</a>
-            <a href="{{ url_for('add_question', workspace_id=workspace_id) }}" class="btn btn-primary">ADD QUESTION</a>
-            <a href="{{ url_for('create_qp', workspace_id=workspace_id) }}" class="btn btn-primary">CREATE QP</a>
-            <a href="{{ url_for('practice_questions', workspace_id=workspace_id) }}" class="btn btn-primary">PRACTICE Qs</a>
+            <a href="{{ url_for('add_question', workspace_id=workspace['key']) }}" class="btn btn-primary">ADD QUESTION</a>
+            <a href="{{ url_for('create_qp', workspace_id=workspace['key']) }}" class="btn btn-primary">CREATE QP</a>
+            <a href="{{ url_for('practice_questions', workspace_id=workspace['key']) }}" class="btn btn-primary">PRACTICE Qs</a>
         </div>
     </div>
 

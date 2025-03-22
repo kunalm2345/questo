@@ -36,6 +36,10 @@ class AddQForm(FlaskForm):
     practice = BooleanField('Set this as a practice question')
     submit = SubmitField('Save')
 
+class WorkspaceForm(FlaskForm):
+    key = StringField('Workspace Key', validators=[DataRequired()])
+    submit = SubmitField('Create Workspace')
+
 @app.route('/')
 def index():
     if session.get('id'):
@@ -105,15 +109,16 @@ def callback():
 
     # Set session variables
     session['id'] = str(user_id)
-    session['email'] = userinfo.get("email")
-    session['name'] = userinfo.get("name")
+    session['email'] = user.get("email")
+    session['name'] = user.get("name")
+    session['workspaces'] = user.get("workspaces", [])  # Assuming 'workspaces' is a list of workspace IDs
 
     return redirect(url_for('workspaces'))
 
 
 from bson import ObjectId  # Ensure you import ObjectId for MongoDB object matching
 
-@app.route('/workspaces/')
+@app.route('/workspaces/', methods=['GET', 'POST'])
 def workspaces():
     # Check if the user is logged in
     if 'id' not in session:
@@ -121,37 +126,53 @@ def workspaces():
     
     # Fetch the logged-in user's MongoDB document using the session's id
     user = user_coll.find_one({"_id": ObjectId(session['id'])})
+    print(user)
     
     if not user:
         return redirect(url_for('index'))
-    
+
     # Get the list of workspace IDs associated with the user
     workspace_ids = user.get("workspaces", [])
-    
-    # Query MongoDB for each workspace by its ObjectId
-    workspaces = [
-        {
-            "id": str(workspace["_id"]),
-            "name": workspace["name"],
-            "description": workspace.get("description", "No description available")
-        }
-        for workspace in work_coll.find({"_id": {"$in": [ObjectId(wid) for wid in workspace_ids]}})
-    ]
-    
-    return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces)
 
-@app.route('/workspace/<workspace_id>')
+    form = WorkspaceForm()
+
+    if form.validate_on_submit():
+        workspace = {
+            "key": form.key.data,
+            "members": [session['id'],],  # Associate with the logged-in user
+        }
+        result = work_coll.insert_one(workspace)
+        inserted_id = result.inserted_id
+        print(inserted_id)
+        # inserted_doc = work_coll.find_one({"_id": inserted_id})
+        # Add the workspace _id to the user's workspaces list
+        user_coll.update_one(
+            {"_id": ObjectId(session['id'])},  
+            {"$push": {"workspaces": inserted_id}}  
+        )
+
+    workspaces = []
+    # Query MongoDB for each workspace by its ObjectId
+    for workspace_id in user.get("workspaces", []):
+        # print(workspace_id)
+        # print(work_coll.find_one({"_id": workspace_id}))
+        workspaces.append(work_coll.find_one({"_id": workspace_id}))
+
+    # print(workspace_id)
+
+    
+    return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces, form=form)
+
+@app.route('/workspace/<workspace_id>/')
 def workspace_view(workspace_id):
     if 'id' not in session:
         return redirect(url_for('index'))
-
     # Find the workspace by ID
-    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    workspace = work_coll.find_one({"key": workspace_id})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
-
     # Find questions associated with the workspace
-    questions = list(q_coll.find({"workspace_id": ObjectId(workspace_id)}))
+    questions = list(q_coll.find({"workspace_id": workspace_id}))
     for question in questions:
         question['id'] = str(question['_id'])  # Ensure question IDs are converted to strings
 
@@ -164,8 +185,6 @@ def workspace_view(workspace_id):
     #     {"id": 2, "ques_txt": "Explain binary search."},
     #     {"id": 3, "ques_txt": "Difference between list and tuple?"}
     # ]
-    print(workspace)
-    print(questions)
 
     # workspace  = {'name':'csf111', 'members':['1234','5678']}
     return render_template('workspace_view.html', workspace=workspace, questions=questions)
@@ -174,7 +193,7 @@ def workspace_view(workspace_id):
 @app.route('/workspace/<workspace_id>/add-question/', methods=['GET', 'POST'])
 def add_question(workspace_id, methods=['GET','POST']):
     workspace  = {'name':'csf111', 'members':['1234','5678']}
-    if 'id' not in session or 'workspace' not in session:
+    if 'id' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
 
     form = AddQForm()
