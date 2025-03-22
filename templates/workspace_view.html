@@ -1,34 +1,45 @@
 {% extends "base.html" %}
 
-{% block title %}Workspace - {{ workspace_id }}{% endblock %}
+{% block title %}Workspace - {{ workspace.name }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center">
-        <h1 class="h3">{{ workspace_id }}</h1>
-        <div>
-            <a href="{{ url_for('index') }}" class="btn btn-secondary">LOGOUT</a>
-            <a href="{{ url_for('add_question', workspace_id=workspace_id) }}" class="btn btn-primary">ADD QUESTION</a>
-            <a href="{{ url_for('create_qp', workspace_id=workspace_id) }}" class="btn btn-primary">CREATE QP</a>
-            <a href="{{ url_for('practice_questions', workspace_id=workspace_id) }}" class="btn btn-primary">PRACTICE Qs</a>
-        </div>
+    <!-- Workspace Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>{{ workspace.name }}</h1>
+        <a href="{{ url_for('workspaces') }}" class="btn btn-secondary">Back to Workspaces</a>
     </div>
+    <p>{{ workspace.description }}</p>
 
-    <!-- Search Box -->
-    <div class="my-3">
-        <input type="text" class="form-control" placeholder="Type your query...">
-        <button class="btn btn-outline-primary mt-2">Search</button>
+    <!-- Add Question Section -->
+    <div class="mt-4">
+        <h3>Add a Question</h3>
+        <form action="{{ url_for('add_question', workspace_id=workspace.id) }}" method="POST">
+            <div class="mb-3">
+                <label for="questionText" class="form-label">Question Text</label>
+                <input type="text" class="form-control" id="questionText" name="question_text" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Question</button>
+        </form>
     </div>
 
     <!-- Questions List -->
-    <div class="list-group">
-        {% for question in questions %}
-        <div class="list-group-item d-flex justify-content-between align-items-center">
-            <span>{{ question.text }}</span>
-            <a href="{{ url_for('edit_question', workspace_id=workspace_id, question_id=question.id) }}" class="btn btn-outline-secondary btn-sm">Edit</a>
-        </div>
-        {% endfor %}
+    <div class="mt-5">
+        <h3>Questions</h3>
+        {% if questions and questions|length > 0 %}
+            <ul class="list-group">
+                {% for question in questions %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {{ question.text }}
+                        <form action="{{ url_for('delete_question', question_id=question.id, workspace_id=workspace.id) }}" method="POST" class="m-0">
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">No questions added yet. Add your first question above!</p>
+        {% endif %}
     </div>
-
 </div>
 {% endblock %}
