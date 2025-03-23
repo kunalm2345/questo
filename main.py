@@ -328,24 +328,15 @@ def add_question(workspace_id):
     )
 
 # Create Question Paper Page
-@app.route('/workspace/<workspace_id>/create-qp/', methods=['GET', 'POST'])
-def create_qp(workspace_id):
+@app.route('/workspace/<workspace_key>/create-qp/', methods=['GET', 'POST'])
+def create_qp(workspace_key):
     if 'id' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
 
     # Find the workspace by ID
-    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    workspace = work_coll.find_one({"key": workspace_id})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
-    
-    # Convert ObjectId to string for the template
-    workspace['id'] = str(workspace['_id'])
-
-    # Retrieve existing questions for the workspace
-    if 'questions' not in session:
-        session['questions'] = {}
-    
-    questions = session['questions'].get(workspace_id, [])
 
     # Handle question paper creation
     if request.method == 'POST':
