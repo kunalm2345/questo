@@ -77,9 +77,6 @@ cloudinary.config(
 
 @app.route('/api/upload_file', methods=['POST'])
 def upload_file():
-    print("Files in request:", request.files)  # Debug line
-    print("Form data:", request.form)  # Debug line
-    
     if 'question_file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     
@@ -107,19 +104,28 @@ def upload_file():
                                                   resource_type="image")
         file_url = upload_result.get('secure_url')
 
-        import llm
-        result = llm.process_image_url_with_genai(file_url, "Respond it in python dictionary type object with three fields: ques_txt (str), tags (list of str), solution (str). DO NOT write any other text before or after this. ques_txt should be the transcription of the question tags should be a list of 1-3 keyword from the question that can help a model to know what its related to. solution should be the solution of the question", llm.api_key, model_name="gemini-2.0-flash")
-        result = result.lstrip('```python').rstrip('```').lstrip('```json').lstrip('```javascript')
-        print("fff", result)
-        print(type(result))
-        result  = eval(result)
-        print("efrdsf", result)
-        print(type(result))
-        # Redirect back to add question page with the URL
-        return redirect(url_for('add_question', 
-                               workspace_id=workspace_id, 
-                               file_url=file_url,
-                               result=result))
+        # Process with genAI
+        result = None
+        try:
+            import llm
+            ai_response = llm.process_image_url_with_genai(
+                file_url, 
+                "Respond it in python dictionary type object with three fields: ques_txt (str), tags (list of str), solution (str). DO NOT write any other text before or after this. ques_txt should be the transcription of the question tags should be a list of 1-3 keyword from the question that can help a model to know what its related to. solution should be the solution of the question", 
+                llm.api_key, 
+                model_name="gemini-2.0-flash"
+            )
+            result_str = ai_response.lstrip('```python').rstrip('```').lstrip('```json').lstrip('```javascript')
+            result = eval(result_str)
+        except Exception as e:
+            print(f"Error processing image with AI: {str(e)}")
+            # Continue even if AI processing fails
+        
+        # Return JSON with file URL and AI results
+        return jsonify({
+            'success': True,
+            'file_url': file_url,
+            'result': result
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -288,24 +294,13 @@ def add_question(workspace_id):
     if 'id' not in session:
         return redirect(url_for('signin'))
     
-    # Create both forms
-    image_form = ImageUploadForm()
+    # Create form
     question_form = AddQForm()
     
-    # Check if we have a file_url from the upload endpoint
+    # Get file_url from query parameter if available
     file_url = request.args.get('file_url')
-    if file_url:
-        question_form.file_src.data = file_url
-
-    if request.args.get('result'):
-        result = request.args.get('result')
-        print("result", result, type(result))
-        result = eval(result)
-        question_form.question_text.data = result.get('ques_txt', '')
-        question_form.tags.data = result.get('tags', [])
-        question_form.sol.data = result.get('solution', '')
     
-    # Handle main form submission (after image is uploaded)
+    # Handle form submission
     if request.method == 'POST' and question_form.validate_on_submit():
         # Parse tags from JSON string
         try:
@@ -328,7 +323,6 @@ def add_question(workspace_id):
     return render_template(
         'add_question.html', 
         workspace=workspace,
-        image_form=image_form, 
         question_form=question_form,
         file_url=file_url
     )
