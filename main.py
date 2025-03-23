@@ -109,7 +109,7 @@ def upload_file():
 
         import llm
         result = llm.process_image_url_with_genai(file_url, "Respond it in python dictionary type object with three fields: ques_txt (str), tags (list of str), solution (str). DO NOT write any other text before or after this. ques_txt should be the transcription of the question tags should be a list of 1-3 keyword from the question that can help a model to know what its related to. solution should be the solution of the question", llm.api_key, model_name="gemini-2.0-flash")
-        result = result.lstrip('```python').rstrip('```')
+        result = result.lstrip('```python').rstrip('```').lstrip('```json').lstrip('```javascript')
         print("fff", result)
         print(type(result))
         result  = eval(result)
