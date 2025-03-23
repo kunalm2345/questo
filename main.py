@@ -46,14 +46,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'FLASK_SECKEY'
 
 
-# class AddQForm(FlaskForm):
-#     question_file = FileField('Upload Question', validators=[DataRequired()])
-#     question_text = TextAreaField('Question Text', validators=[DataRequired()])
-#     tags = StringField('Tags', validators=[DataRequired()])
-#     sol = TextAreaField('Solution', validators=[DataRequired()])
-#     practice = BooleanField('Set this as a practice question')
-#     submit = SubmitField('Save')
-
 # First form - only for image upload
 class ImageUploadForm(FlaskForm):
     question_file = FileField('Upload Question Image', validators=[DataRequired()])
@@ -65,6 +57,13 @@ class AddQForm(FlaskForm):
     file_src = StringField('Image URL')  # New field to store image URL
     question_text = TextAreaField('Question Text', validators=[DataRequired()])
     tags = StringField('Tags', validators=[DataRequired()])
+    sol = TextAreaField('Solution', validators=[DataRequired()])
+    practice = BooleanField('Set this as a practice question')
+    submit = SubmitField('Save Question')
+
+class EditQForm(FlaskForm):
+    question_id = StringField('Question ID', validators=[DataRequired()])
+    question_text = TextAreaField('Question Text', validators=[DataRequired()])
     sol = TextAreaField('Solution', validators=[DataRequired()])
     practice = BooleanField('Set this as a practice question')
     submit = SubmitField('Save Question')
@@ -283,7 +282,7 @@ def workspace_view(workspace_key):
     
     # Create search form
     form = SearchForm()
-
+    
     # Find the workspace by key
     workspace = work_coll.find_one({"key": workspace_key})
     if not workspace:
@@ -296,16 +295,64 @@ def workspace_view(workspace_key):
     questions = list(q_coll.find({"workspace_id": mongo_id}))
     for question in questions:
         question['id'] = str(question['_id'])  # Ensure question IDs are converted to strings
+        # Make sure isPractice is properly set (sometimes might be stored as 'practice' in DB)
+        question['isPractice'] = question.get('isPractice', question.get('practice', False))
 
     # Ensure workspace ID is converted to string for consistency
     workspace['id'] = str(workspace['_id'])
 
+    # Create a list of edit forms, one for each question
+    edit_forms = []
+    for _ in questions:
+        edit_forms.append(EditQForm())
+    
+    # Check if we're processing an edit form submission
+    if request.method == 'POST' and 'question_id' in request.form:
+        # Create an instance of the edit form with the submitted data
+        edit_form = EditQForm(request.form)
+        
+        if edit_form.validate():
+            question_id = edit_form.question_id.data
+            
+            try:
+                # Convert string ID to ObjectId
+                from bson.objectid import ObjectId
+                question_object_id = ObjectId(question_id)
+                
+                # Create the update dictionary
+                update_data = {
+                    "ques_txt": edit_form.question_text.data,
+                    "solutions": edit_form.sol.data,
+                    "isPractice": edit_form.practice.data,
+                    # Preserve other fields by not updating them
+                }
+                
+                # Update the question in MongoDB
+                result = q_coll.update_one(
+                    {"_id": question_object_id},
+                    {"$set": update_data}
+                )
+                
+                if result.modified_count > 0:
+                    flash('Question updated successfully!', 'success')
+                else:
+                    flash('No changes were made to the question.', 'info')
+                
+                # Refresh the page to show updated data
+                return redirect(url_for('workspace_view', workspace_key=workspace_key))
+            
+            except Exception as e:
+                flash(f'Error updating question: {str(e)}', 'danger')
+                print(f"Error updating question: {e}")
+                import traceback
+                traceback.print_exc()
+    
     # Initialize search status
     is_search = False
     search_query = None
 
     # Handle search form submission
-    if form.validate_on_submit():
+    if form.validate_on_submit() and 'query' in request.form:
         is_search = True
         search_query = form.query.data
         print(f"Processing search for: {search_query}")
@@ -325,6 +372,7 @@ def workspace_view(workspace_key):
                     search_questions = list(q_coll.find({"file_src": {"$in": image_paths}}))
                     for question in search_questions:
                         question['id'] = str(question['_id'])
+                        question['isPractice'] = question.get('isPractice', question.get('practice', False))
                         
                         # Add relevance score to questions
                         for result in search_results:
@@ -338,10 +386,15 @@ def workspace_view(workspace_key):
                         search_questions.sort(key=lambda q: q.get("relevance_score", float('inf')))
                     
                     questions = search_questions
+                    
+                    # Create forms for the search results
+                    edit_forms = [EditQForm() for _ in questions]
+                    
                     print(f"Found {len(questions)} matching questions")
                 else:
                     # No search results, return empty list
                     questions = []
+                    edit_forms = []
                     print("No matching questions found")
             except Exception as e:
                 print(f"Error searching vectordb: {e}")
@@ -353,6 +406,7 @@ def workspace_view(workspace_key):
                            workspace=workspace, 
                            questions=questions, 
                            form=form,
+                           edit_forms=edit_forms,
                            is_search=is_search,
                            search_query=search_query)
 
@@ -441,11 +495,70 @@ def create_qp(workspace_key):
     if 'temp_questions' in session and session['temp_questions']:
         temp_question_ids = [q['id'] for q in session['temp_questions']]
     
-    # Filter out questions that are already in the temp list
-    available_questions = [q for q in all_questions if q['id'] not in temp_question_ids]
+    # Initialize search tracking variables
+    is_search = False
+    search_query = None
     
-    # Handle question paper creation form submission
-    if request.method == 'POST':
+    # Handle search form submission
+    if request.method == 'POST' and 'search_query' in request.form:
+        is_search = True
+        search_query = request.form['search_query']
+        print(f"Processing search for: {search_query}")
+        
+        # Check if vectordb exists for this workspace
+        if vectordb_exists(workspace_key):
+            try:
+                # Search vectordb for similar questions
+                search_results = search_vectordb(workspace_key, search_query, top_k=5)
+                print(f"Search results: {search_results}")
+                
+                # Get unique image paths from the search results
+                image_paths = [result["image_path"] for result in search_results]
+                
+                if image_paths:
+                    # Find questions with these image paths
+                    search_questions = list(q_coll.find({
+                        "workspace_id": workspace['_id'],
+                        "file_src": {"$in": image_paths}
+                    }))
+                    
+                    for question in search_questions:
+                        question['id'] = str(question['_id'])
+                        
+                        # Add relevance score to questions
+                        for result in search_results:
+                            if result["image_path"] == question.get("file_src", ""):
+                                question["relevance_score"] = result["score"]
+                                question["matching_tag"] = result["tag"]
+                                break
+                    
+                    # Sort questions by relevance score if available
+                    if all("relevance_score" in q for q in search_questions):
+                        search_questions.sort(key=lambda q: q.get("relevance_score", float('inf')))
+                    
+                    # Filter out questions already in temp list
+                    available_questions = [q for q in search_questions if q['id'] not in temp_question_ids]
+                    print(f"Found {len(available_questions)} matching questions")
+                else:
+                    # No search results, return empty list
+                    available_questions = []
+                    print("No matching questions found")
+            except Exception as e:
+                print(f"Error searching vectordb: {e}")
+                import traceback
+                traceback.print_exc()
+                # Use all questions as fallback
+                available_questions = [q for q in all_questions if q['id'] not in temp_question_ids]
+        else:
+            # Vectordb doesn't exist, fall back to simple text search in MongoDB
+            available_questions = [
+                q for q in all_questions 
+                if q['id'] not in temp_question_ids and 
+                (search_query.lower() in q.get('ques_txt', '').lower() or 
+                 any(search_query.lower() in tag.lower() for tag in q.get('tags', [])))
+            ]
+    elif request.method == 'POST':
+        # Handle question paper creation form submission
         selected_questions = request.form.getlist('selected_questions')
         
         # Create a list to store the question paper
@@ -482,10 +595,61 @@ def create_qp(workspace_key):
         
         # Redirect to preview
         return redirect(url_for('preview_qp', workspace_id=str(workspace['_id'])))
+    else:
+        # Normal GET request - filter out questions already in temp list
+        available_questions = [q for q in all_questions if q['id'] not in temp_question_ids]
 
     # Pass filtered available questions to the template
-    return render_template('create_qp.html', workspace=workspace, questions=available_questions)
+    return render_template('create_qp.html', 
+                          workspace=workspace, 
+                          questions=available_questions,
+                          is_search=is_search,
+                          search_query=search_query)
     
+@app.route('/workspace/<workspace_key>/edit-question-in-qp/', methods=['POST'])
+def edit_question_in_qp(workspace_key):
+    """Edit a question directly from the question paper creation view"""
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Get the question ID from form data
+    question_id = request.form.get('question_id')
+    if not question_id:
+        flash('Question ID is required', 'danger')
+        return redirect(url_for('create_qp', workspace_key=workspace_key))
+    
+    try:
+        # Convert the string ID to ObjectId
+        from bson.objectid import ObjectId
+        question_object_id = ObjectId(question_id)
+        
+        # Create the update data dictionary
+        update_data = {
+            "ques_txt": request.form.get('question_text'),
+            "solutions": request.form.get('sol'),
+            "isPractice": 'practice' in request.form  # Convert checkbox to boolean
+        }
+        
+        # Update the question in MongoDB
+        result = q_coll.update_one(
+            {"_id": question_object_id},
+            {"$set": update_data}
+        )
+        
+        if result.modified_count > 0:
+            flash('Question updated successfully!', 'success')
+        else:
+            flash('No changes were made to the question.', 'info')
+            
+    except Exception as e:
+        flash(f'Error updating question: {str(e)}', 'danger')
+        print(f"Error updating question: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Redirect back to the question paper creation page
+    return redirect(url_for('create_qp', workspace_key=workspace_key))
+
 @app.route('/workspace/<workspace_key>/add_question_to_temp', methods=['POST'])
 @app.route('/workspace/<workspace_key>/add_question_to_temp', methods=['POST'])
 def add_question_to_temp(workspace_key):

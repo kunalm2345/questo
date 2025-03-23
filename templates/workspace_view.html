@@ -60,18 +60,15 @@
                     
                     <!-- Action buttons -->
                     <div class="d-flex justify-content-end">
-                        <a href="{{ url_for('edit_question', workspace_id=workspace.id, question_id=question.id) }}" class="btn btn-outline-primary btn-sm me-2">
-                            Edit
-                        </a>
                         <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="offcanvas" data-bs-target="#detailsCanvas{{ loop.index }}">
-                            Details
+                            Edit Details
                         </button>
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- Offcanvas for details -->
+        <!-- Offcanvas for details and editing -->
         <div class="offcanvas offcanvas-end" tabindex="-1" id="detailsCanvas{{ loop.index }}" aria-labelledby="detailsCanvas{{ loop.index }}Label">
             <div class="offcanvas-header">
                 <h5 class="offcanvas-title" id="detailsCanvas{{ loop.index }}Label">Question Details</h5>
@@ -80,42 +77,89 @@
             <div class="offcanvas-body">
                 <small class="text-muted d-block mb-3">ID: {{ question.id }}</small>
                 
-                <!-- Question image if available -->
-                {% if question.image_src %}
-                <div class="mb-4">
-                    <img src="{{ question.image_src }}" class="img-fluid rounded" alt="Question image">
-                </div>
-                {% endif %}
-                
-                <div class="mb-4">
-                    <h5 class="fw-bold">Question:</h5>
-                    <p>{{ question.ques_txt }}</p>
-                </div>
-                
-                <div class="mb-4">
-                    <h5 class="fw-bold">Solution:</h5>
-                    <p>{{ question.solutions }}</p>
-                </div>
-                
+                <!-- Toggle between view and edit modes -->
                 <div class="mb-3">
-                    <h5 class="fw-bold">Tags:</h5>
-                    <div>
-                        {% for tag in question.tags %}
-                        <span class="badge bg-light text-dark me-1 mb-1">{{ tag }}</span>
-                        {% endfor %}
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="editModeSwitch{{ loop.index }}" onchange="toggleEditMode({{ loop.index }})">
+                        <label class="form-check-label" for="editModeSwitch{{ loop.index }}">Edit Mode</label>
                     </div>
                 </div>
                 
-                {% if question.isPractice %}
-                <div class="mt-4">
-                    <span class="badge bg-success">Practice Question</span>
+                <!-- View mode content -->
+                <div id="viewMode{{ loop.index }}">
+                    <!-- Question image if available -->
+                    {% if question.image_src %}
+                    <div class="mb-4">
+                        <img src="{{ question.image_src }}" class="img-fluid rounded" alt="Question image">
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-4">
+                        <h5 class="fw-bold">Question:</h5>
+                        <p>{{ question.ques_txt }}</p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="fw-bold">Solution:</h5>
+                        <p>{{ question.solutions }}</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Tags:</h5>
+                        <div>
+                            {% for tag in question.tags %}
+                            <span class="badge bg-light text-dark me-1 mb-1">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    {% if question.isPractice %}
+                    <div class="mt-4">
+                        <span class="badge bg-success">Practice Question</span>
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
                 
-                <div class="mt-4">
-                    <a href="{{ url_for('edit_question', workspace_id=workspace.id, question_id=question.id) }}" class="btn btn-primary">
-                        Edit Question
-                    </a>
+                <!-- Edit mode content with form -->
+                <div id="editMode{{ loop.index }}" class="d-none">
+                    <form method="POST" action="{{ url_for('workspace_view', workspace_key=workspace.key) }}" id="editForm{{ loop.index }}">
+                        {{ edit_forms[loop.index0].hidden_tag() }}
+                        {{ edit_forms[loop.index0].question_id(value=question.id, class="d-none") }}
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Question Text</label>
+                            {{ edit_forms[loop.index0].question_text(class="form-control", value=question.ques_txt) }}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Solution</label>
+                            {{ edit_forms[loop.index0].sol(class="form-control", value=question.solutions) }}
+                        </div>
+                        
+                        {% if question.image_src %}
+                        <div class="mb-3">
+                            <label class="form-label">Image</label>
+                            <img src="{{ question.image_src }}" class="img-fluid rounded mb-2" alt="Question image" style="max-height: 200px;">
+                            <div class="form-text">Image URL: {{ question.image_src }}</div>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                {{ edit_forms[loop.index0].practice(class="form-check-input", checked=question.isPractice) }}
+                                <label class="form-check-label" for="{{ edit_forms[loop.index0].practice.id }}">
+                                    Set this as a practice question
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            {{ edit_forms[loop.index0].submit(class="btn btn-primary") }}
+                            <button type="button" class="btn btn-outline-secondary" onclick="toggleEditMode({{ loop.index }})">
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -128,4 +172,36 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+    function toggleEditMode(index) {
+        const viewMode = document.getElementById(`viewMode${index}`);
+        const editMode = document.getElementById(`editMode${index}`);
+        const editSwitch = document.getElementById(`editModeSwitch${index}`);
+        
+        if (editSwitch.checked) {
+            viewMode.classList.add('d-none');
+            editMode.classList.remove('d-none');
+        } else {
+            viewMode.classList.remove('d-none');
+            editMode.classList.add('d-none');
+        }
+    }
+    
+    // Ensure textareas show the correct content (fix for form repopulation)
+    document.addEventListener('DOMContentLoaded', function() {
+        {% for question in questions %}
+            const questionTextarea{{ loop.index }} = document.querySelector('#editForm{{ loop.index }} textarea[name="question_text"]');
+            const solutionTextarea{{ loop.index }} = document.querySelector('#editForm{{ loop.index }} textarea[name="sol"]');
+            
+            if (questionTextarea{{ loop.index }}) {
+                questionTextarea{{ loop.index }}.value = `{{ question.ques_txt|replace('\n', '\\n')|replace('"', '\\"')|safe }}`;
+            }
+            
+            if (solutionTextarea{{ loop.index }}) {
+                solutionTextarea{{ loop.index }}.value = `{{ question.solutions|replace('\n', '\\n')|replace('"', '\\"')|safe }}`;
+            }
+        {% endfor %}
+    });
+</script>
 {% endblock %}
