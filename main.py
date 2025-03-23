@@ -2,10 +2,30 @@ from flask import Flask, render_template, url_for, redirect, request, session, j
 from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
 from wtforms.validators import DataRequired
 from flask_wtf import FlaskForm
+import cloudinary
+import cloudinary.uploader
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
 from functions import add_to_vectordb, vectordb_exists, search_vectordb
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your_secret_key'  # Replace with a secure secret key
+
+# Cloudinary configuration (replace with your credentials)
+cloudinary.config(
+    cloud_name="dy0q5cx5j",
+    api_key="212258678217944",
+    api_secret="xK3KvwLdOe-RaAl2o_c9LkMfMUQ"
+)
+
+class AddQForm(FlaskForm):
+    question = StringField('Question', validators=[DataRequired()])
+    submit = SubmitField('Submit')
+
+class UploadImageForm(FlaskForm):
+    image = request.files['image'] #get image from request.
+    submit = SubmitField('Upload Image')
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
@@ -339,6 +359,7 @@ def workspace_view(workspace_key):
                            is_search=is_search,
                            search_query=search_query)
 
+
 @app.route('/workspace/<workspace_id>/add-question/', methods=['GET', 'POST'])
 def add_question(workspace_id):
     # Verify workspace exists
@@ -394,6 +415,7 @@ def add_question(workspace_id):
         question_form=question_form,
         file_url=file_url
     )
+
 
 # Create Question Paper Page
 @app.route('/workspace/<workspace_key>/create-qp/', methods=['GET', 'POST'])
