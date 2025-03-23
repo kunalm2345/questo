@@ -1,11 +1,12 @@
 from flask import Flask, render_template, url_for, redirect, request, session, jsonify, flash
-from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
+from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField, HiddenField
 from wtforms.validators import DataRequired
 from flask_wtf import FlaskForm
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
 from functions import retrieve_similar_images
+import re
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
@@ -54,6 +55,7 @@ class AddQForm(FlaskForm):
 
 class WorkspaceForm(FlaskForm):
     key = StringField('Workspace Key', validators=[DataRequired()])
+    emails = HiddenField('Member Emails')
     submit = SubmitField('Create Workspace')
 
 class SearchForm(FlaskForm):
@@ -205,6 +207,8 @@ def callback():
 
 from bson import ObjectId  # Ensure you import ObjectId for MongoDB object matching
 
+import re  # Add this import at the top of your file
+
 @app.route('/workspaces/', methods=['GET', 'POST'])
 def workspaces():
     # Check if the user is logged in
@@ -212,52 +216,120 @@ def workspaces():
         return redirect(url_for('index'))
     
     # Fetch the logged-in user's MongoDB document using the session's id
-    user = user_coll.find_one({"_id": ObjectId(session['id'])})
-    print(user)
+    current_user_id = ObjectId(session['id'])
+    user = user_coll.find_one({"_id": current_user_id})
     
     if not user:
         return redirect(url_for('index'))
 
     # Get the list of workspace IDs associated with the user
     workspace_ids = user.get("workspaces", [])
+    current_user_email = user.get("email", "")
 
     form = WorkspaceForm()
 
     if form.validate_on_submit():
-        workspace = {
-            "key": form.key.data,
-            "members": [session['id'],],  # Associate with the logged-in user
-        }
+        try:
+            print(f"Form submitted - creating workspace '{form.key.data}'")
+            
+            # Get emails from the form
+            member_emails = []
+            if form.emails.data:
+                member_emails = [email.strip() for email in form.emails.data.split(',') if email.strip()]
+                print(f"Emails from form: {member_emails}")
+            
+            # Ensure current user's email is in the list
+            if current_user_email and current_user_email not in member_emails:
+                member_emails.append(current_user_email)
+            
+            # Map emails to user IDs
+            member_ids = [str(current_user_id)]  # Always include current user
+            not_found_emails = []
+            
+            # Find user IDs for other emails
+            for email in member_emails:
+                if email != current_user_email:  # Skip current user as we already added them
+                    member_user = user_coll.find_one({"email": email})
+                    if member_user:
+                        member_id = str(member_user["_id"])
+                        if member_id not in member_ids:  # Avoid duplicates
+                            member_ids.append(member_id)
+                    else:
+                        not_found_emails.append(email)
+            
+            workspace = {
+                "key": form.key.data,
+                "members": member_ids,
+                "created_by": str(current_user_id),
+                "created_at": datetime.datetime.now()
+            }
 
-        workspace_key = workspace.get("key")
-        existing_workspace = work_coll.find_one({"key": workspace_key})
-        if existing_workspace:
-            flash("Error: Workspace key already exists!", "danger")
+            # Check for existing workspace
+            existing_workspace = work_coll.find_one({"key": workspace["key"]})
+            if existing_workspace:
+                flash("Error: Workspace key already exists!", "danger")
+                return redirect(url_for("workspaces"))
+            
+            # Insert the workspace
+            result = work_coll.insert_one(workspace)
+            workspace_id = result.inserted_id
+            
+            # Update each member's document with the new workspace
+            for member_id in member_ids:
+                user_coll.update_one(
+                    {"_id": ObjectId(member_id)},
+                    {"$addToSet": {"workspaces": workspace_id}}
+                )
+            
+            # Create appropriate flash message
+            if not_found_emails:
+                flash(f"Workspace created with {len(member_ids)} members. Could not find users for: {', '.join(not_found_emails)}", "warning")
+            else:
+                flash(f"Workspace created successfully with {len(member_ids)} members!", "success")
+            
             return redirect(url_for("workspaces"))
-        
-        result = work_coll.insert_one(workspace)
-        inserted_id = result.inserted_id
-        print(inserted_id)
-        # inserted_doc = work_coll.find_one({"_id": inserted_id})
-        # Add the workspace _id to the user's workspaces list
-        user_coll.update_one(
-            {"_id": ObjectId(session['id'])},  
-            {"$push": {"workspaces": inserted_id}}  
-        )
-        flash("Workspace created successfully!", "success")
-        return redirect(url_for("workspaces"))
+            
+        except Exception as e:
+            print(f"Error creating workspace: {e}")
+            flash(f"Error creating workspace: {str(e)}", "danger")
+            return redirect(url_for("workspaces"))
 
+    # Get workspaces for display
     workspaces = []
-    # Query MongoDB for each workspace by its ObjectId
     for workspace_id in user.get("workspaces", []):
-        # print(workspace_id)
-        # print(work_coll.find_one({"_id": workspace_id}))
-        workspaces.append(work_coll.find_one({"_id": workspace_id}))
+        workspace = work_coll.find_one({"_id": workspace_id})
+        if workspace:
+            workspaces.append(workspace)
 
-    # print(workspace_id)
+    return render_template(
+        'workspaces.html', 
+        name=user.get("name", "User"), 
+        workspaces=workspaces, 
+        form=form,
+        current_user_email=current_user_email
+    )
 
+# If you want to add a separate endpoint for handling AJAX requests
+@app.route('/add_workspace_member', methods=['POST'])
+def add_workspace_member():
+    if 'id' not in session:
+        return jsonify({"error": "Not logged in"}), 401
     
-    return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces, form=form)
+    data = request.json
+    if not data or 'email' not in data:
+        return jsonify({"error": "No email provided"}), 400
+    
+    email = data['email']
+    workspace_key = data.get('workspace_key')
+    
+    # Find the user by email
+    user = user_coll.find_one({"email": email})
+    
+    if not user:
+        return jsonify({"error": f"No user found with email: {email}"}), 404
+    
+    return jsonify({"success": True, "user_id": str(user["_id"])})
+
 
 @app.route('/workspace/<workspace_key>/')
 def workspace_view(workspace_key):
