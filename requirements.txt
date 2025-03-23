@@ -10,3 +10,4 @@ langchain_mistralai
 requests
 google-generativeai
 Pillow
+bson
