@@ -241,12 +241,13 @@ def workspaces():
     
     return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces, form=form)
 
-@app.route('/workspace/<workspace_id>/')
-def workspace_view(workspace_id):
+@app.route('/workspace/<workspace_key>/')
+def workspace_view(workspace_key):
     if 'id' not in session:
         return redirect(url_for('index'))
     # Find the workspace by ID
-    workspace = work_coll.find_one({"key": workspace_id})
+    workspace = work_coll.find_one({"key": workspace_key})
+    workspace_id = workspace.get("_id")
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
     # Find questions associated with the workspace
@@ -288,7 +289,7 @@ def add_question(workspace_id):
     if request.args.get('result'):
         result = request.args.get('result')
         print("result", result, type(result))
-        # result = eval(result)
+        result = eval(result)
         question_form.question_text.data = result.get('ques_txt', '')
         question_form.tags.data = result.get('tags', [])
         question_form.sol.data = result.get('solution', '')
@@ -303,7 +304,7 @@ def add_question(workspace_id):
             
         # Save question to database
         question = {
-            "workspace_id": workspace_id,
+            "workspace_id": workspace.get("_id"),
             "file_src": question_form.file_src.data,
             "ques_txt": question_form.question_text.data,
             "tags": tags_list,
@@ -311,7 +312,7 @@ def add_question(workspace_id):
             "practice": question_form.practice.data,
         }
         q_coll.insert_one(question)
-        return redirect(url_for('workspace_view', workspace_id=workspace_id))
+        return redirect(url_for('workspace_view', workspace_key=workspace_id))
     
     return render_template(
         'add_question.html', 
@@ -346,7 +347,7 @@ def create_qp(workspace_id):
         selected_questions = request.form.getlist('selected_questions')
         session['question_paper'] = selected_questions  # Store selected questions
         session.modified = True
-        return redirect(url_for('workspace_view', workspace_id=workspace_id))  # Redirect after saving
+        return redirect(url_for('workspace_view', workspace_key=workspace_id))  # Redirect after saving
 
     return render_template('create_qp.html', workspace=workspace, questions=questions)
 
