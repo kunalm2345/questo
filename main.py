@@ -16,7 +16,7 @@ cloudinary.config(
     api_key="212258678217944",
     api_secret="xK3KvwLdOe-RaAl2o_c9LkMfMUQ"
 )
-from functions import retrieve_similar_images
+from functions import add_to_vectordb, vectordb_exists, search_vectordb
 import io
 import datetime
 from reportlab.pdfgen import canvas
