@@ -1,4 +1,4 @@
-from flask import Flask, render_template, url_for, redirect, request, session, jsonify
+from flask import Flask, render_template, url_for, redirect, request, session, jsonify, flash
 from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
 from wtforms.validators import DataRequired
 from flask_wtf import FlaskForm
@@ -221,6 +221,13 @@ def workspaces():
             "key": form.key.data,
             "members": [session['id'],],  # Associate with the logged-in user
         }
+
+        workspace_key = workspace.get("key")
+        existing_workspace = work_coll.find_one({"key": workspace_key})
+        if existing_workspace:
+            flash("Error: Workspace key already exists!", "danger")
+            return redirect(url_for("workspaces"))
+        
         result = work_coll.insert_one(workspace)
         inserted_id = result.inserted_id
         print(inserted_id)
@@ -230,6 +237,8 @@ def workspaces():
             {"_id": ObjectId(session['id'])},  
             {"$push": {"workspaces": inserted_id}}  
         )
+        flash("Workspace created successfully!", "success")
+        return redirect(url_for("workspaces"))
 
     workspaces = []
     # Query MongoDB for each workspace by its ObjectId
@@ -385,6 +394,8 @@ def download_qp(workspace_id):
 @app.route('/workspace/<workspace_id>/download-ans-key/')
 def download_ans_key(workspace_id):
     return "Download Answer Key - (TODO: Generate PDF)"
+
+
 
 # Practice Questions Page
 @app.route('/workspace/<workspace_id>/practice/', methods=['GET', 'POST'])
