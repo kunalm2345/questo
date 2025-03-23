@@ -3,20 +3,55 @@
 {% block title %}My Workspaces - Questo{% endblock %}
 
 {% block content %}
+<!-- CSS for improved email input styling -->
+<style>
+    /* Email input container styling */
+    .emails-input-wrapper {
+        min-height: 60px; /* Make the container taller */
+        max-width: 100%; /* Max width of container */
+        transition: none; /* Remove animation */
+        border: 1px solid #ced4da !important; /* Standard border */
+    }
+    
+    /* Remove highlight on focus */
+    .emails-input-wrapper:focus-within {
+        box-shadow: none !important;
+        border-color: #ced4da !important;
+    }
+    
+    /* Style for the actual input field */
+    .emails-input {
+        min-width: 100px; /* Minimum width */
+        max-width: 100%; /* Maximum width */
+        outline: none; /* Remove outline */
+        height: 30px; /* Height of input field */
+    }
+    
+    /* Style for the email badges/pills */
+    .emails-list .badge {
+        padding: 0.5rem 0.75rem;
+        margin-bottom: 0.25rem;
+        font-weight: normal;
+        border: 1px solid #dee2e6;
+    }
+</style>
+
 <div class="container py-4">
+    <!-- Hidden field to store current user's email -->
+    <input type="hidden" id="current-user-email" value="{{ current_user_email }}">
+    
     <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=True) %}
-    {% if messages %}
-        <div class="alert-container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
             {% for category, message in messages %}
-            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
             {% endfor %}
-        </div>
-    {% endif %}
+        {% endif %}
     {% endwith %}
+    
     <!-- Header Section -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">My Workspaces</h1>
@@ -77,6 +112,30 @@
                             </div>
                         {% endif %}
                     </div>
+                    
+                    <!-- Fill automatically button with dividers -->
+                    <div class="d-flex align-items-center mb-3 w-100">
+                        <hr class="flex-grow-1 me-3">
+                        <button type="button" id="add-members-btn" class="btn btn-outline-secondary">Add Members</button>
+                        <hr class="flex-grow-1 ms-3">
+                    </div>
+                    
+                    <!-- Email input section (initially hidden) -->
+                    <div id="members-section" style="display: none;">
+                        <!-- Hidden emails field for form submission -->
+                        {{ form.emails(class="d-none", id="emails_hidden") }}
+                        <input type="hidden" name="emails_array" id="emails_array_hidden">
+                        
+                        <!-- Custom emails input with pills/badges -->
+                        <div class="mb-3 w-100">
+                            <label for="emails_input" class="form-label">Member Emails</label>
+                            <div class="emails-input-wrapper form-control p-2" id="emails-container">
+                                <div class="emails-list d-flex flex-wrap gap-2 mb-1"></div>
+                                <input type="text" class="emails-input border-0 flex-grow-1 ms-1" id="emails_input" placeholder="Enter emails (press Enter or comma to separate)">
+                            </div>
+                            <div class="form-text">Press Enter or comma to add an email. Multiple emails can be pasted at once.</div>
+                        </div>
+                    </div>
                 </div>
                 <!-- Modal Footer -->
                 <div class="modal-footer">
@@ -87,4 +146,181 @@
         </div>
     </div>
 </div>
+
+<!-- JavaScript for Email Input Handling -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const addMembersBtn = document.getElementById('add-members-btn');
+        const membersSection = document.getElementById('members-section');
+        const emailsInput = document.getElementById('emails_input');
+        const emailsList = document.querySelector('.emails-list');
+        const emailsHidden = document.getElementById('emails_hidden');
+        const emailsContainer = document.getElementById('emails-container');
+        
+        // Set initial size of input based on container width
+        function adjustInputWidth() {
+            const containerWidth = emailsContainer.clientWidth;
+            const availableWidth = containerWidth - 20;
+            emailsInput.style.width = Math.min(availableWidth, 300) + 'px';
+        }
+        
+        // Adjust width on window resize
+        window.addEventListener('resize', adjustInputWidth);
+        
+        // Get current user's email from the page
+        const currentUserEmail = document.getElementById('current-user-email')?.value;
+        
+        // Toggle members section visibility
+        addMembersBtn.addEventListener('click', function() {
+            membersSection.style.display = membersSection.style.display === 'none' ? 'block' : 'none';
+            addMembersBtn.textContent = membersSection.style.display === 'none' ? 'Add Members' : 'Hide Members';
+            
+            // If we're showing the members section and the list is empty, add the current user's email
+            if (membersSection.style.display === 'block') {
+                adjustInputWidth();
+                if (emailsList.children.length === 0 && currentUserEmail) {
+                    addEmail(currentUserEmail);
+                }
+            }
+        });
+        
+        // Function to add email as a pill/badge
+        function addEmail(email) {
+            if (!email) return;
+            
+            // Clean the email (trim whitespace)
+            email = email.trim();
+            if (email === '') return;
+            
+            // Check if email already exists to avoid duplicates
+            const existingEmails = Array.from(emailsList.querySelectorAll('.badge')).map(badge => 
+                badge.textContent.trim());
+            if (existingEmails.some(e => e.includes(email))) return;
+            
+            // Check if email exists in the system via API
+            fetch('/add_workspace_member', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body:{
+                    'email': email
+                }
+            })
+            .then(response => response)
+            .then(data => {
+                if (data.error) {
+                    // Show error if user not found
+                    alert(`Error: ${data.error}`);
+                } else {
+                    // Create email pill/badge
+                    const emailElement = document.createElement('span');
+                    emailElement.className = 'badge bg-light text-dark d-flex align-items-center';
+                    emailElement.innerHTML = `
+                        ${email}
+                        <button type="button" class="btn-close btn-close-sm ms-2" aria-label="Remove email"></button>
+                    `;
+                    
+                    // Add data attribute with user ID if available
+                    if (data.user_id) {
+                        emailElement.dataset.userId = data.user_id;
+                    }
+                    
+                    // Add remove functionality
+                    emailElement.querySelector('.btn-close').addEventListener('click', function() {
+                        emailElement.remove();
+                        updateHiddenField();
+                        adjustInputWidth();
+                    });
+                    
+                    // Add to the list
+                    emailsList.appendChild(emailElement);
+                    
+                    // Update hidden field
+                    updateHiddenField();
+                    
+                    // Adjust input width after adding email
+                    adjustInputWidth();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                
+                // Still add the email even if API call fails (fallback)
+                const emailElement = document.createElement('span');
+                emailElement.className = 'badge bg-light text-dark d-flex align-items-center';
+                emailElement.innerHTML = `
+                    ${email}
+                    <button type="button" class="btn-close btn-close-sm ms-2" aria-label="Remove email"></button>
+                `;
+                
+                // Add remove functionality
+                emailElement.querySelector('.btn-close').addEventListener('click', function() {
+                    emailElement.remove();
+                    updateHiddenField();
+                    adjustInputWidth();
+                });
+                
+                // Add to the list
+                emailsList.appendChild(emailElement);
+                
+                // Update hidden field
+                updateHiddenField();
+                
+                // Adjust input width after adding email
+                adjustInputWidth();
+            });
+        }
+        
+        // Function to update the hidden field with all emails
+        function updateHiddenField() {
+            const emails = Array.from(emailsList.querySelectorAll('.badge')).map(badge => {
+                // Extract just the email text (without the close button text)
+                const text = badge.textContent.trim();
+                return text.replace(/\s*×\s*$/, '').trim(); // Remove any "×" character
+            });
+            emailsHidden.value = emails.join(',');
+            console.log("Updated hidden field value:", emailsHidden.value);
+        }
+        
+        // Make sure hidden field is updated when form is submitted
+        document.querySelector('form').addEventListener('submit', function() {
+            updateHiddenField();
+            console.log("Form submitted with emails:", emailsHidden.value);
+        });
+        
+        // Handle key press in the input field
+        emailsInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                
+                const inputValue = emailsInput.value.trim();
+                if (inputValue) {
+                    // Split by commas in case multiple emails were pasted
+                    const emails = inputValue.split(/[,\n]/);
+                    emails.forEach(email => addEmail(email));
+                    emailsInput.value = '';
+                }
+            }
+        });
+        
+        // Handle paste event to support multiple emails at once
+        emailsInput.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const pasteData = (e.clipboardData || window.clipboardData).getData('text');
+            const emails = pasteData.split(/[,\n]/);
+            
+            emails.forEach(email => addEmail(email));
+            emailsInput.value = '';
+        });
+        
+        // Handle blur event to add any remaining email
+        emailsInput.addEventListener('blur', function() {
+            if (emailsInput.value.trim() !== '') {
+                addEmail(emailsInput.value);
+                emailsInput.value = '';
+            }
+        });
+    });
+    </script>
 {% endblock %}
