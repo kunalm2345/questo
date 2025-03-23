@@ -15,11 +15,19 @@
         </div>
     </div>
 
-    <!-- Search Box with input group -->
-    <div class="mb-4">
-        <div class="input-group">
-            <input type="text" class="form-control" placeholder="Search by text, tags, or ID...">
-            <button class="btn btn-primary" type="button">Search</button>
+    <div class="container">
+        <div class="row">
+            <div class="col">
+                <div class="mb-4">
+                    <form method="POST" action="{{ url_for('workspace_view', workspace_key=workspace.key) }}">
+                        {{ form.hidden_tag() }}
+                        <div class="input-group">
+                            {{ form.query(class="form-control", placeholder="Search by text, tags, or ID...") }}
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 

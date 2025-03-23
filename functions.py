@@ -1,213 +1,203 @@
-import os
-import uuid
-import pickle
-import gridfs
-from pymongo import MongoClient
+# functions.py
 from langchain_community.vectorstores.faiss import FAISS
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
-from PIL import Image
+import uuid
+import pickle
+import os
+import io
 
-# CONNECT TO MONGODB
-client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
-db = client['questoDB'] 
-collection = db["image_metadata"]  
-fs = gridfs.GridFS(db)  
+# Initialize the embeddings model
+def get_embeddings():
+    print("1. Starting to initialize the embeddings model")
+    embeddings = HuggingFaceEmbeddings(model_name="thenlper/gte-large")
+    print("2. Embeddings model initialized successfully")
+    return embeddings
 
-embeddings = HuggingFaceEmbeddings(model_name="thenlper/gte-large")
-
-# Path to FAISS index (if saved locally)
-# index_path = "faiss_index"
-
-# SAVE IMAGE METADATA IN MONGODB
-def save_image_metadata(file_path, tags):
-    """Save image metadata (file path & tags) in MongoDB."""
-    image_entry = {"file_path": file_path, "tags": tags}
-    collection.insert_one(image_entry)
-    print(f"✅ Image metadata saved: {file_path}")
-
-# 4. LOAD FAISS INDEX FROM MONGODB
-def load_faiss_from_mongo():
-    """Load FAISS index from MongoDB and deserialize it."""
-    faiss_file = fs.find_one({"filename": "faiss_index"})
-    if faiss_file:
-        faiss_bytes = faiss_file.read()  
-        vector_db = pickle.loads(faiss_bytes) 
-        print("✅ FAISS index loaded from MongoDB.")
-        return vector_db
+# Ensure the vectordb directory exists
+def ensure_vectordb_dir(workspace_id):
+    print(f"3. Ensuring vectordb directory exists for workspace {workspace_id}")
+    # Create base vectordb directory if it doesn't exist
+    base_dir = os.path.join("static", "vectordb")
+    if not os.path.exists(base_dir):
+        print("4. Creating base vectordb directory")
+        os.makedirs(base_dir)
     else:
-        print("⚠️ No FAISS index found in MongoDB. Creating a new one.")
-        return None
-
-# SAVE FAISS INDEX TO MONGODB
-def save_faiss_to_mongo(vector_db):
-    """Convert FAISS index to binary and save in MongoDB."""
-    faiss_bytes = pickle.dumps(vector_db) 
-    old_index = fs.find_one({"filename": "faiss_index"})  
-    if old_index:
-        fs.delete(old_index._id)  
-    fs.put(faiss_bytes, filename="faiss_index")  
-    print("✅ FAISS index saved in MongoDB.")
-
-# LOAD METADATA & INITIALIZE FAISS
-def load_existing_metadata():
-    """Load image metadata from MongoDB."""
-    images = collection.find({})
-    texts = [" ".join(img["tags"]) for img in images]  
-    metadatas = [{"image_path": img["file_path"], "tags": img["tags"]} for img in images]
-    return texts, metadatas
-
-def initialize_faiss():
-    """Load FAISS from MongoDB or create a new one."""
-    vector_db = load_faiss_from_mongo()
+        print("4. Base vectordb directory already exists")
     
-    if vector_db is None:
-        texts, metadatas = load_existing_metadata()
-        
-        # If there's no existing data, create a dummy entry to initialize FAISS
-        if not texts:
-            print("No existing data found. Creating a dummy entry to initialize FAISS.")
-            texts = ["dummy entry"]
-            metadatas = [{"image_path": "dummy_path", "tags": ["dummy"]}]
-        
-        vector_db = FAISS.from_texts(texts=texts, embedding=embeddings, metadatas=metadatas)
-        save_faiss_to_mongo(vector_db) 
-    return vector_db
-
-# Load FAISS index (either from MongoDB or by creating a new one)
-# vector_db = initialize_faiss()
-vector_db = None
-
-# UPDATE FAISS INDEX & SAVE TO MONGODB
-def update_faiss_and_save(file_path, tags):
-    """Update FAISS index and save the new version in MongoDB."""
-    text_representation = " ".join(tags)
-    metadata = {"image_path": file_path, "tags": tags}
+    # Create workspace-specific directory if it doesn't exist
+    workspace_dir = os.path.join(base_dir, f"workspace_{workspace_id}")
+    if not os.path.exists(workspace_dir):
+        print(f"5. Creating workspace-specific directory for {workspace_id}")
+        os.makedirs(workspace_dir)
+    else:
+        print(f"5. Workspace-specific directory for {workspace_id} already exists")
     
-    # Add new data to FAISS
-    vector_db.add_texts([text_representation], metadatas=[metadata], ids=[str(uuid.uuid4())])
-    
-    # Save updated FAISS index to MongoDB
-    save_faiss_to_mongo(vector_db)
-    print(f"✅ FAISS index updated with {file_path}.")
+    print(f"6. Directory path: {workspace_dir}")
+    return workspace_dir
 
+# Get the path to the vectordb file for a workspace
+def get_vectordb_path(workspace_id):
+    print(f"7. Getting vectordb file path for workspace {workspace_id}")
+    workspace_dir = ensure_vectordb_dir(workspace_id)
+    file_path = os.path.join(workspace_dir, "vectordb.pkl")
+    print(f"8. Vectordb file path: {file_path}")
+    return file_path
 
-# ADD NEW IMAGE
-def add_new_image(file_path, tags):
-    """Save image metadata and update FAISS index."""
-    save_image_metadata(file_path, tags)  
-    update_faiss_and_save(file_path, tags)  
+# Save a vectordb to disk
+def save_vectordb(vectordb, workspace_id):
+    print(f"9. Saving vectordb for workspace {workspace_id}")
+    file_path = get_vectordb_path(workspace_id)
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    print("10. Directory confirmed to exist")
+    
+    try:
+        # Save the vectordb to disk
+        with open(file_path, 'wb') as f:
+            pickle.dump(vectordb, f)
+        print(f"11. Vectordb saved successfully to {file_path}")
+        return True
+    except Exception as e:
+        print(f"11. ERROR: Failed to save vectordb: {e}")
+        return False
 
-# 9. RETRIEVE SIMILAR IMAGES
-def show_image(image_path):
-    """Display an image."""
-    img = Image.open(image_path)
-    img.show()
-
-def retrieve_similar_images(query_text, question_ids, top_k=5):
-    """
-    Search for similar questions using FAISS or fallback to text search.
+# Load a vectordb from disk
+def load_vectordb(workspace_id):
+    print(f"12. Loading vectordb for workspace {workspace_id}")
+    file_path = get_vectordb_path(workspace_id)
     
-    Parameters:
-    query_text (str): The search query
-    question_ids (list): List of question IDs to filter the results
-    top_k (int): Maximum number of results to return
-    
-    Returns:
-    list: List of question IDs that match the search query
-    """
-    global vector_db
-    
-    # Initialize vector_db if not already done
-    if vector_db is None:
+    if os.path.exists(file_path):
+        print(f"13. Vectordb file exists at {file_path}")
         try:
-            vector_db = initialize_faiss()
+            with open(file_path, 'rb') as f:
+                vectordb = pickle.load(f)
+            print("14. Vectordb loaded successfully")
+            return vectordb
         except Exception as e:
-            print(f"Error initializing FAISS: {e}")
-            # If FAISS initialization fails, fall back to text search
-            return fallback_text_search(query_text, question_ids, top_k)
+            print(f"14. ERROR: Failed to load vectordb: {e}")
+    else:
+        print(f"13. Vectordb file does not exist at {file_path}")
+    
+    # If file doesn't exist or loading failed, create a new one
+    print("15. Creating new vectordb")
+    return create_vectordb(workspace_id)
+
+# Create a new vectordb for a workspace
+def create_vectordb(workspace_id):
+    print(f"16. Creating new vectordb for workspace {workspace_id}")
+    # Initialize embeddings
+    embeddings = get_embeddings()
+    print("17. Got embeddings for new vectordb")
+    
+    # Create an empty FAISS index
+    print("18. Creating empty FAISS index")
+    vectordb = FAISS.from_texts(texts=["placeholder"], embedding=embeddings)
+    print("19. Empty FAISS index created")
+    
+    # Save to disk
+    success = save_vectordb(vectordb, workspace_id)
+    if success:
+        print("20. New vectordb saved successfully")
+    else:
+        print("20. WARNING: Failed to save new vectordb")
+    
+    return vectordb
+
+# Add a new entry to the vectordb
+def add_to_vectordb(workspace_id, tag, image_path):
+    print(f"21. Adding entry to vectordb for workspace {workspace_id}")
+    print(f"22. Tag: {tag}, Image path: {image_path}")
+    
+    # Load the existing vectordb
+    vectordb = load_vectordb(workspace_id)
+    print("23. Loaded existing vectordb (or created new one)")
+    
+    # Add the new entry
+    try:
+        print("24. Adding new entry to vectordb")
+        vectordb.add_texts(
+            texts=[tag],
+            metadatas=[{"tag": tag, "image_path": image_path}],
+            ids=[str(uuid.uuid4())]
+        )
+        print("25. Entry added successfully")
+    except Exception as e:
+        print(f"25. ERROR: Failed to add entry: {e}")
+        raise e
+    
+    # Save the updated vectordb
+    success = save_vectordb(vectordb, workspace_id)
+    if success:
+        print("26. Updated vectordb saved successfully")
+    else:
+        print("26. WARNING: Failed to save updated vectordb")
+    
+    return vectordb
+
+# Check if a vectordb exists for a workspace
+def vectordb_exists(workspace_id):
+    print(f"27. Checking if vectordb exists for workspace {workspace_id}")
+    file_path = get_vectordb_path(workspace_id)
+    exists = os.path.exists(file_path)
+    print(f"28. Vectordb exists: {exists}")
+    return exists
+
+# functions.py (add this function)
+
+def search_vectordb(workspace_id, query_text, top_k=3):
+    """
+    Search the vectordb for a given query and return the top_k most similar entries
+    """
+    print(f"Searching vectordb for workspace {workspace_id} with query: {query_text}")
+    
+    # Load the vectordb
+    vectordb = load_vectordb(workspace_id)
+    
+    # Get embeddings for the query
+    embeddings = get_embeddings()
+    query_embedding = embeddings.embed_query(query_text)
     
     try:
-        # Attempt FAISS search
-        query_vector = embeddings.embed_documents([query_text])[0]
+        # Search the vectordb using the query
+        results = vectordb.similarity_search_with_score(query_text, k=top_k)
+        print(f"Found {len(results)} results with scores")
         
-        # Use the vector_db to search
-        results = vector_db.similarity_search_by_vector(query_vector, k=top_k * 3)
-        
-        # Extract matching IDs
-        matched_ids = []
-        for result in results:
-            image_path = result.metadata.get('image_path', '')
+        # Extract and return the results
+        search_results = []
+        for doc, score in results:
+            # Skip placeholder entries
+            if doc.page_content == "placeholder":
+                continue
+                
+            search_results.append({
+                "tag": doc.page_content,
+                "image_path": doc.metadata.get("image_path", ""),
+                "score": float(score)  # Convert to float for better display
+            })
             
-            # Check if this corresponds to any of our question IDs
-            for question_id in question_ids:
-                if question_id in image_path:
-                    matched_ids.append(question_id)
-                    break
-        
-        # If no matches found with FAISS, fall back to text search
-        if not matched_ids:
-            print("No FAISS matches found, falling back to text search")
-            return fallback_text_search(query_text, question_ids, top_k)
-        
-        return matched_ids[:top_k]
-        
-    except Exception as e:
-        print(f"Error in FAISS search: {e}")
-        # Fall back to text search on any error
-        return fallback_text_search(query_text, question_ids, top_k)
-
-def fallback_text_search(query_text, question_ids, top_k=5):
-    """
-    Fallback text search when FAISS fails or returns no results.
-    """
-    print("Using fallback text search")
+        print(f"Returning {len(search_results)} filtered search results")
+        return search_results
     
-    # Handle empty question_ids
-    if not question_ids:
-        return []
-    
-    try:
-        # Convert string IDs to ObjectId for MongoDB query
-        object_ids = [ObjectId(qid) for qid in question_ids]
-        
-        # Fetch all questions with the given IDs
-        questions = list(q_coll.find({"_id": {"$in": object_ids}}))
-        
-        # Simple matching: Look for any questions containing the query terms
-        query_terms = [term.lower() for term in query_text.split()]
-        matching_questions = []
-        
-        for question in questions:
-            # Check if any query term is in the question text or tags
-            question_text = question.get("ques_txt", "").lower()
-            question_tags = [tag.lower() for tag in question.get("tags", [])]
-            
-            # Count how many terms match
-            match_count = 0
-            for term in query_terms:
-                if term in question_text or any(term in tag for tag in question_tags):
-                    match_count += 1
-            
-            # If any matches, add to our list with a match score
-            if match_count > 0:
-                matching_questions.append((str(question["_id"]), match_count))
-        
-        # Sort by match count (descending) and return top_k IDs
-        matching_questions.sort(key=lambda x: x[1], reverse=True)
-        matching_ids = [q[0] for q in matching_questions[:top_k]]
-        
-        return matching_ids
     except Exception as e:
-        print(f"Error in fallback text search: {e}")
-        # If everything fails, return some random IDs as a last resort
-        return question_ids[:min(top_k, len(question_ids))]
-
-# # ===========================
-# # 🔹 10. EXAMPLE USAGE
-# # ===========================
-# # Add new images
-# add_new_image("images/image1.png", ["math", "calculus"])
-# add_new_image("images/image2.png", ["physics", "mechanics"])
-
-# # Retrieve similar images
-# retrieve_similar_images("math")
+        print(f"Error during vectordb search: {e}")
+        # Fallback to regular similarity search
+        try:
+            results = vectordb.similarity_search(query_text, k=top_k)
+            
+            search_results = []
+            for doc in results:
+                # Skip placeholder entries
+                if doc.page_content == "placeholder":
+                    continue
+                    
+                search_results.append({
+                    "tag": doc.page_content,
+                    "image_path": doc.metadata.get("image_path", ""),
+                    "score": None  # No score available
+                })
+            
+            return search_results
+        except Exception as e:
+            print(f"Fallback search also failed: {e}")
+            return []

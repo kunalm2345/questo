@@ -5,7 +5,7 @@ from flask_wtf import FlaskForm
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
-from functions import retrieve_similar_images
+from functions import add_to_vectordb, vectordb_exists, search_vectordb
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
@@ -259,31 +259,85 @@ def workspaces():
     
     return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces, form=form)
 
-@app.route('/workspace/<workspace_key>/')
+@app.route('/workspace/<workspace_key>/', methods=['GET', 'POST'])
 def workspace_view(workspace_key):
     if 'id' not in session:
         return redirect(url_for('index'))
-    # Find the workspace by ID
+    
+    # Create search form
+    form = SearchForm()
+
+    # Find the workspace by key
     workspace = work_coll.find_one({"key": workspace_key})
-    workspace_id = workspace.get("_id")
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
-    # Find questions associated with the workspace
-    questions = list(q_coll.find({"workspace_id": workspace['_id']}))
+    
+    # Get MongoDB _id of the workspace
+    mongo_id = workspace.get("_id")
+    
+    # Default to showing all questions
+    questions = list(q_coll.find({"workspace_id": mongo_id}))
     for question in questions:
         question['id'] = str(question['_id'])  # Ensure question IDs are converted to strings
 
     # Ensure workspace ID is converted to string for consistency
     workspace['id'] = str(workspace['_id'])
 
-    # Sample questions (Replace with DB query)
-    # questions = [
-    #     {"id": 1, "ques_txt": "What is O(n) complexity?"},
-    #     {"id": 2, "ques_txt": "Explain binary search."},
-    #     {"id": 3, "ques_txt": "Difference between list and tuple?"}
-    # ]
+    # Initialize search status
+    is_search = False
+    search_query = None
 
-    return render_template('workspace_view.html', workspace=workspace, questions=questions)
+    # Handle search form submission
+    if form.validate_on_submit():
+        is_search = True
+        search_query = form.query.data
+        print(f"Processing search for: {search_query}")
+        
+        # Check if vectordb exists for this workspace
+        if vectordb_exists(workspace_key):
+            try:
+                # Search vectordb for similar questions
+                search_results = search_vectordb(workspace_key, search_query, top_k=3)
+                print(f"Search results: {search_results}")
+                
+                # Get unique image paths from the search results
+                image_paths = [result["image_path"] for result in search_results]
+                
+                if image_paths:
+                    # Find questions with these image paths
+                    search_questions = list(q_coll.find({"file_src": {"$in": image_paths}}))
+                    for question in search_questions:
+                        question['id'] = str(question['_id'])
+                        
+                        # Add relevance score to questions
+                        for result in search_results:
+                            if result["image_path"] == question["file_src"]:
+                                question["relevance_score"] = result["score"]
+                                question["matching_tag"] = result["tag"]
+                                break
+                    
+                    # Sort questions by relevance score if available
+                    if all("relevance_score" in q for q in search_questions):
+                        search_questions.sort(key=lambda q: q.get("relevance_score", float('inf')))
+                    
+                    questions = search_questions
+                    print(f"Found {len(questions)} matching questions")
+                else:
+                    # No search results, return empty list
+                    questions = []
+                    print("No matching questions found")
+            except Exception as e:
+                print(f"Error searching vectordb: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue with default questions list
+
+    return render_template('workspace_view.html', 
+                           workspace=workspace, 
+                           questions=questions, 
+                           form=form,
+                           is_search=is_search,
+                           search_query=search_query)
 
 @app.route('/workspace/<workspace_id>/add-question/', methods=['GET', 'POST'])
 def add_question(workspace_id):
@@ -308,7 +362,7 @@ def add_question(workspace_id):
             tags_list = json.loads(question_form.tags.data)
         except:
             tags_list = []  # Default to empty list if parsing fails
-            
+        
         # Save question to database
         question = {
             "workspace_id": workspace.get("_id"),
@@ -319,10 +373,23 @@ def add_question(workspace_id):
             "practice": question_form.practice.data,
         }
         q_coll.insert_one(question)
+        
+        # Add the image and tags to the vectordb (with error handling)
+        file_src = question_form.file_src.data
+        
+        try:
+            # Process each tag separately for better retrieval
+            for tag in tags_list:
+                add_to_vectordb(workspace_id, tag, file_src)
+        except Exception as e:
+            # Log the error but continue - don't prevent question from being added
+            print(f"Error updating vectordb: {e}")
+            # You might want to add proper logging here
+        
         return redirect(url_for('workspace_view', workspace_key=workspace_id))
     
     return render_template(
-        'add_question.html', 
+        'add_question.html',
         workspace=workspace,
         question_form=question_form,
         file_url=file_url
