@@ -36,6 +36,10 @@
                     <div class="card h-100 shadow-sm">
                         <div class="card-body">
                             <h5 class="card-title">{{ workspace.key }}</h5>
+                            <div class="d-flex align-items-center text-muted">
+                                <i class="bi bi-people-fill me-2"></i>
+                                <span>{{ workspace.members|length }} member{% if workspace.members|length != 1 %}s{% endif %}</span>
+                            </div>
                         </div>
                     </div>
                 </a>

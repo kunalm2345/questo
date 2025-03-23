@@ -15,9 +15,7 @@
             <div class="d-grid gap-2">
                 <a href="{{ url_for('download_qp', workspace_id=workspace.id) }}" class="btn btn-primary mb-2">Download Question Paper</a>
                 <a href="{{ url_for('download_ans_key', workspace_id=workspace.id) }}" class="btn btn-secondary mb-2">Download Answer Key</a>
-                <form action="{{ url_for('save_qp_to_db', workspace_id=workspace.id) }}" method="POST">
-                    <button type="submit" class="btn btn-success w-100">Save Question Paper</button>
-                </form>
+
             </div>
         </div>
     </div>
