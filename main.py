@@ -1,4 +1,4 @@
-from flask import Flask, render_template, url_for, redirect, request, session, jsonify, flash
+from flask import Flask, render_template, url_for, redirect, request, session, jsonify, flash, send_file
 from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
 from wtforms.validators import DataRequired
 from flask_wtf import FlaskForm
@@ -7,10 +7,8 @@ import cloudinary.uploader
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
-from functions import add_to_vectordb, vectordb_exists, search_vectordb
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'  # Replace with a secure secret key
+from functions import add_to_vectordb, vectordb_exists, search_vectordb
 
 # Cloudinary configuration (replace with your credentials)
 cloudinary.config(
@@ -18,14 +16,13 @@ cloudinary.config(
     api_key="212258678217944",
     api_secret="xK3KvwLdOe-RaAl2o_c9LkMfMUQ"
 )
+from functions import retrieve_similar_images
+import io
+import datetime
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
 
-class AddQForm(FlaskForm):
-    question = StringField('Question', validators=[DataRequired()])
-    submit = SubmitField('Submit')
-
-class UploadImageForm(FlaskForm):
-    image = request.files['image'] #get image from request.
-    submit = SubmitField('Upload Image')
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
@@ -418,58 +415,531 @@ def add_question(workspace_id):
 
 
 # Create Question Paper Page
+# Replace your existing create_qp route with this updated version
 @app.route('/workspace/<workspace_key>/create-qp/', methods=['GET', 'POST'])
 def create_qp(workspace_key):
     if 'id' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
 
     # Find the workspace by ID
-    workspace = work_coll.find_one({"key": workspace_id})
-    if not workspace:
-        return redirect(url_for('workspaces'))  # Redirect if workspace not found
-
-    # Handle question paper creation
-    if request.method == 'POST':
-        selected_questions = request.form.getlist('selected_questions')
-        session['question_paper'] = selected_questions  # Store selected questions
-        session.modified = True
-        return redirect(url_for('workspace_view', workspace_key=workspace_id))  # Redirect after saving
-
-    return render_template('create_qp.html', workspace=workspace, questions=questions)
-
-@app.route('/workspace/<workspace_id>/question-paper/', methods=['GET', 'POST'])
-def preview_qp(workspace_id):
-    if 'id' not in session:
-        return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
-
-    # Find the workspace by ID
-    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    workspace = work_coll.find_one({"key": workspace_key})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
     
     # Convert ObjectId to string for the template
     workspace['id'] = str(workspace['_id'])
+    
+    # Get all available questions for this workspace
+    all_questions = list(q_coll.find({"workspace_id": workspace['_id']}))
+    
+    # Convert ObjectIds to strings for the template
+    for question in all_questions:
+        question['id'] = str(question['_id'])
+    
+    # Get the list of questions already in the temp list
+    temp_question_ids = []
+    if 'temp_questions' in session and session['temp_questions']:
+        temp_question_ids = [q['id'] for q in session['temp_questions']]
+    
+    # Filter out questions that are already in the temp list
+    available_questions = [q for q in all_questions if q['id'] not in temp_question_ids]
+    
+    # Handle question paper creation form submission
+    if request.method == 'POST':
+        selected_questions = request.form.getlist('selected_questions')
+        
+        # Create a list to store the question paper
+        question_paper = []
+        
+        # Add selected questions
+        for q_id in selected_questions:
+            question = q_coll.find_one({"_id": ObjectId(q_id)})
+            if question:
+                question_paper.append({
+                    'id': str(question['_id']),
+                    'text': question['ques_txt'],
+                    'marks': 1  # Default marks
+                })
+        
+        # Add temp questions if they exist
+        if 'temp_questions' in session:
+            for temp_q in session['temp_questions']:
+                # Check if this question is already in selected_questions
+                if temp_q['id'] not in selected_questions:
+                    question_paper.append(temp_q)
+        
+        # Store the question paper in session
+        if 'question_paper' not in session:
+            session['question_paper'] = {}
+        
+        session['question_paper'][workspace_key] = question_paper
+        session.modified = True
+        
+        # Clear temp questions after creating the paper
+        if 'temp_questions' in session:
+            session.pop('temp_questions')
+            session.modified = True
+        
+        # Redirect to preview
+        return redirect(url_for('preview_qp', workspace_id=str(workspace['_id'])))
 
+    # Pass filtered available questions to the template
+    return render_template('create_qp.html', workspace=workspace, questions=available_questions)
+    
+@app.route('/workspace/<workspace_key>/add_question_to_temp', methods=['POST'])
+@app.route('/workspace/<workspace_key>/add_question_to_temp', methods=['POST'])
+def add_question_to_temp(workspace_key):
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Find the workspace by key
+    workspace = work_coll.find_one({"key": workspace_key})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
+    # Get form data
+    question_id = request.form.get('question_id')
+    
+    # Parse marks as integer, with fallback to 1
+    try:
+        marks = int(request.form.get('marks', 1))
+        # Ensure marks is at least 1
+        marks = max(1, marks)
+    except:
+        marks = 1
+    
+    # Get the question from database
+    question = q_coll.find_one({"_id": ObjectId(question_id)})
+    
+    if question:
+        # Initialize session temp_questions if it doesn't exist
+        if 'temp_questions' not in session:
+            session['temp_questions'] = []
+        
+        # Check if question is already in the temp list
+        existing_q_ids = [q['id'] for q in session['temp_questions']]
+        if question_id not in existing_q_ids:
+            # Add question to temp list with specified marks
+            temp_question = {
+                'id': question_id,
+                'text': question['ques_txt'],
+                'marks': marks
+            }
+            
+            # Append to session list
+            temp_questions = session['temp_questions']
+            temp_questions.append(temp_question)
+            session['temp_questions'] = temp_questions
+            session.modified = True  # Important for session to save changes
+            
+        # Debug info to console
+        print(f"Temp questions: {session['temp_questions']}")
+        print(f"Total marks: {sum(q['marks'] for q in session['temp_questions'])}")
+    
+    # Redirect back to create question paper page
+    return redirect(url_for('create_qp', workspace_key=workspace_key))
+
+@app.route('/workspace/<workspace_key>/remove_question_from_temp')
+def remove_question_from_temp(workspace_key):
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Get question id from query parameters
+    question_id = request.args.get('question_id')
+    
+    # Remove from session if exists
+    if 'temp_questions' in session:
+        temp_questions = [q for q in session['temp_questions'] if q['id'] != question_id]
+        session['temp_questions'] = temp_questions
+        session.modified = True  # Important for session to save changes
+    
+    # Redirect back to create question paper page
+    return redirect(url_for('create_qp', workspace_key=workspace_key))
+
+# Update your preview_qp route to match the template
+@app.route('/workspace/<workspace_id>/question-paper/', methods=['GET', 'POST'])
+def preview_qp(workspace_id):
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+
+    # Find the workspace by ID
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
+    # Make sure id and key are available
+    workspace['id'] = str(workspace['_id'])
+    workspace_key = workspace.get('key')
+    
     # Retrieve selected questions from session
-    question_paper = session.get('question_paper', {}).get(workspace_id, [])
-
+    question_paper = []
+    if 'question_paper' in session and workspace_key in session['question_paper']:
+        question_paper = session['question_paper'][workspace_key]
+    
     # Handle question removal
     if request.method == 'POST' and 'delete_question' in request.form:
-        question_id = int(request.form['delete_question'])
+        question_id = request.form['delete_question']
         question_paper = [q for q in question_paper if q["id"] != question_id]
-        session['question_paper'][workspace_id] = question_paper
+        
+        if 'question_paper' not in session:
+            session['question_paper'] = {}
+        
+        session['question_paper'][workspace_key] = question_paper
         session.modified = True
+        
+        # Redirect to avoid form resubmission
+        return redirect(url_for('preview_qp', workspace_id=workspace_id))
+    
+    # Get question paper metadata
+    qp_metadata = {}
+    if 'qp_metadata' in session and workspace_key in session['qp_metadata']:
+        qp_metadata = session['qp_metadata'][workspace_key]
+    
+    # Calculate total marks
+    total_marks = sum(q.get('marks', 0) for q in question_paper)
+    
+    return render_template('preview_qp.html', 
+                          workspace=workspace, 
+                          question_paper=question_paper,
+                          total_marks=total_marks,
+                          qp_metadata=qp_metadata)
 
-    return render_template('preview_qp.html', workspace=workspace, question_paper=question_paper)
+# Add a route to update question marks
+@app.route('/workspace/<workspace_id>/update-question-marks', methods=['POST'])
+def update_question_marks(workspace_id):
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Find the workspace
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
+    workspace_key = workspace.get('key')
+    
+    # Get form data
+    question_id = request.form.get('question_id')
+    try:
+        marks = int(request.form.get('marks', 1))
+        marks = max(1, marks)  # Ensure marks is at least 1
+    except:
+        marks = 1
+    
+    # Update the question marks in the session
+    if 'question_paper' in session and workspace_key in session['question_paper']:
+        question_paper = session['question_paper'][workspace_key]
+        for question in question_paper:
+            if question['id'] == question_id:
+                question['marks'] = marks
+                break
+        
+        session['question_paper'][workspace_key] = question_paper
+        session.modified = True
+    
+    return redirect(url_for('preview_qp', workspace_id=workspace_id))
 
+# Add a route to update question paper metadata
+@app.route('/workspace/<workspace_id>/update-qp-metadata', methods=['POST'])
+def update_qp_metadata(workspace_id):
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Find the workspace
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
+    workspace_key = workspace.get('key')
+    
+    # Get form data
+    title = request.form.get('title', 'Untitled Question Paper')
+    try:
+        duration = int(request.form.get('duration', 60))
+    except:
+        duration = 60
+    
+    # Update metadata in session
+    if 'qp_metadata' not in session:
+        session['qp_metadata'] = {}
+    
+    session['qp_metadata'][workspace_key] = {
+        'title': title,
+        'duration': duration
+    }
+    session.modified = True
+    
+    return redirect(url_for('preview_qp', workspace_id=workspace_id))
+
+# Add a route to save question paper to database
+@app.route('/workspace/<workspace_id>/save-qp-to-db', methods=['POST'])
+def save_qp_to_db(workspace_id):
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Find the workspace
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
+    workspace_key = workspace.get('key')
+    
+    # Get question paper data from session
+    question_paper = []
+    if 'question_paper' in session and workspace_key in session['question_paper']:
+        question_paper = session['question_paper'][workspace_key]
+    else:
+        flash("Cannot save empty question paper", "danger")
+        return redirect(url_for('preview_qp', workspace_id=workspace_id))
+    
+    # Get metadata
+    qp_metadata = {}
+    if 'qp_metadata' in session and workspace_key in session['qp_metadata']:
+        qp_metadata = session['qp_metadata'][workspace_key]
+    
+    # Prepare question paper document for MongoDB
+    qp_document = {
+        "docTitle": qp_metadata.get('title', 'Untitled Question Paper'),
+        "ques": [
+            {
+                "question_id": ObjectId(q['id']),
+                "marks": q['marks']
+            } for q in question_paper
+        ],
+        "maxMarks": sum(q.get('marks', 0) for q in question_paper),
+        "maxTime": qp_metadata.get('duration', 60),
+        "workspace_id": ObjectId(workspace_id),
+        "created_at": datetime.datetime.now(),
+        "created_by": ObjectId(session['id'])
+    }
+    
+    try:
+        # Save to database
+        result = qp_coll.insert_one(qp_document)
+        
+        if result.inserted_id:
+            # Clear session data for this question paper
+            if 'question_paper' in session and workspace_key in session['question_paper']:
+                del session['question_paper'][workspace_key]
+            
+            if 'qp_metadata' in session and workspace_key in session['qp_metadata']:
+                del session['qp_metadata'][workspace_key]
+            
+            session.modified = True
+            
+            flash("Question paper saved successfully!", "success")
+        else:
+            flash("Error saving question paper. Please try again.", "danger")
+    except Exception as e:
+        print(f"Error saving question paper to database: {e}")
+        flash(f"Error saving question paper: {str(e)}", "danger")
+    
+    # Redirect to workspace view
+    return redirect(url_for('workspace_view', workspace_key=workspace_key))
+
+# Add download routes
 @app.route('/workspace/<workspace_id>/download-qp/')
 def download_qp(workspace_id):
-    return "Download Question Paper - (TODO: Generate PDF)"
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Find the workspace
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
+    workspace_key = workspace.get('key')
+    
+    # Get question paper data
+    question_paper = []
+    if 'question_paper' in session and workspace_key in session['question_paper']:
+        question_paper = session['question_paper'][workspace_key]
+    
+    # Get metadata
+    qp_metadata = {}
+    if 'qp_metadata' in session and workspace_key in session['qp_metadata']:
+        qp_metadata = session['qp_metadata'][workspace_key]
+    
+    # Create PDF document
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    
+    # Set title and metadata
+    title = qp_metadata.get('title', 'Question Paper')
+    duration = qp_metadata.get('duration', 60)
+    total_marks = sum(q.get('marks', 0) for q in question_paper)
+    
+    # Add title
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawCentredString(width/2, height - 50, title)
+    
+    # Add metadata
+    pdf.setFont("Helvetica", 12)
+    metadata_text = f"Duration: {duration} minutes | Total Marks: {total_marks}"
+    pdf.drawCentredString(width/2, height - 70, metadata_text)
+    
+    # Add each question
+    y_position = height - 100
+    for i, question in enumerate(question_paper, 1):
+        # Question number and marks
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(50, y_position, f"Q{i}. ({question.get('marks', 0)} marks)")
+        y_position -= 20
+        
+        # Question text
+        pdf.setFont("Helvetica", 10)
+        text = question.get('text', '')
+        
+        # Handle text wrapping (simple implementation)
+        words = text.split()
+        line = ""
+        for word in words:
+            test_line = line + " " + word if line else word
+            if pdf.stringWidth(test_line, "Helvetica", 10) < width - 100:
+                line = test_line
+            else:
+                pdf.drawString(60, y_position, line)
+                y_position -= 15
+                line = word
+        
+        if line:
+            pdf.drawString(60, y_position, line)
+            y_position -= 15
+        
+        # Add spacing between questions
+        y_position -= 20
+        
+        # Check if need new page
+        if y_position < 100:
+            pdf.showPage()
+            y_position = height - 50
+    
+    pdf.save()
+    
+    # Return the PDF as a downloadable file
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"{title.replace(' ', '_')}.pdf",
+        mimetype='application/pdf'
+    )
 
 @app.route('/workspace/<workspace_id>/download-ans-key/')
 def download_ans_key(workspace_id):
-    return "Download Answer Key - (TODO: Generate PDF)"
-
+    if 'id' not in session:
+        return redirect(url_for('signin'))
+    
+    # Find the workspace
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        return redirect(url_for('workspaces'))
+    
+    workspace_key = workspace.get('key')
+    
+    # Get question paper data
+    question_paper = []
+    if 'question_paper' in session and workspace_key in session['question_paper']:
+        question_paper = session['question_paper'][workspace_key]
+    
+    # Get metadata
+    qp_metadata = {}
+    if 'qp_metadata' in session and workspace_key in session['qp_metadata']:
+        qp_metadata = session['qp_metadata'][workspace_key]
+    
+    # Create PDF document
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    
+    # Set title and metadata
+    title = f"Answer Key: {qp_metadata.get('title', 'Question Paper')}"
+    
+    # Add title
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawCentredString(width/2, height - 50, title)
+    
+    # Add each question with solution
+    y_position = height - 80
+    for i, question in enumerate(question_paper, 1):
+        # Get question details from database to access solution
+        try:
+            db_question = q_coll.find_one({"_id": ObjectId(question['id'])})
+        except:
+            db_question = None
+        
+        if not db_question:
+            continue
+        
+        # Question number
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(50, y_position, f"Q{i}. ({question.get('marks', 0)} marks)")
+        y_position -= 20
+        
+        # Question text
+        pdf.setFont("Helvetica", 10)
+        text = question.get('text', '')
+        
+        # Handle text wrapping
+        words = text.split()
+        line = ""
+        for word in words:
+            test_line = line + " " + word if line else word
+            if pdf.stringWidth(test_line, "Helvetica", 10) < width - 100:
+                line = test_line
+            else:
+                pdf.drawString(60, y_position, line)
+                y_position -= 15
+                line = word
+        
+        if line:
+            pdf.drawString(60, y_position, line)
+            y_position -= 15
+        
+        # Add solution heading
+        y_position -= 10
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(60, y_position, "Solution:")
+        y_position -= 15
+        
+        # Add solution text
+        pdf.setFont("Helvetica", 10)
+        solution_text = db_question.get('solutions', 'No solution available')
+        
+        # Handle solution text wrapping
+        words = solution_text.split()
+        line = ""
+        for word in words:
+            test_line = line + " " + word if line else word
+            if pdf.stringWidth(test_line, "Helvetica", 10) < width - 120:
+                line = test_line
+            else:
+                pdf.drawString(70, y_position, line)
+                y_position -= 15
+                line = word
+        
+        if line:
+            pdf.drawString(70, y_position, line)
+            y_position -= 15
+        
+        # Add spacing between questions
+        y_position -= 30
+        
+        # Check if need new page
+        if y_position < 100:
+            pdf.showPage()
+            y_position = height - 50
+    
+    pdf.save()
+    
+    # Return the PDF as a downloadable file
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"Answer_Key_{qp_metadata.get('title', 'Question_Paper').replace(' ', '_')}.pdf",
+        mimetype='application/pdf'
+    )
 
 
 # Practice Questions Page

@@ -5,8 +5,8 @@
 {% block content %}
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center">
-        <h1 class="h3">Creating a Q Paper</h1>
-        <a href="{{ url_for('workspace_view', workspace_key=workspace.id) }}" class="btn btn-secondary">Done</a>
+        <h1 class="h3">Creating a Question Paper</h1>
+        <a href="{{ url_for('workspace_view', workspace_key=workspace.key) }}" class="btn btn-secondary">Done</a>
     </div>
 
     <!-- Search Bar -->
@@ -15,15 +15,37 @@
         <button class="btn btn-outline-primary mt-2">Search</button>
     </div>
 
+    <!-- Added Questions Section -->
+    {% if session.temp_questions %}
+    <div class="mb-4">
+        <h4>Added Questions</h4>
+        <div class="list-group">
+            {% for q in session.temp_questions %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <span>{{ q.text }}</span>
+                <div>
+                    <span class="badge bg-primary">{{ q.marks }} marks</span>
+                    <a href="{{ url_for('remove_question_from_temp', workspace_key=workspace.key, question_id=q.id) }}" class="btn btn-outline-danger btn-sm">Remove</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Questions List Form -->
-    <form method="POST" action="{{ url_for('preview_qp', workspace_id=workspace.id) }}">
+    <form method="POST" action="{{ url_for('create_qp', workspace_key=workspace.key) }}">
+        <h4>Available Questions</h4>
         <div class="list-group">
             {% for question in questions %}
             <div class="list-group-item d-flex justify-content-between align-items-center">
                 <span>{{ question.ques_txt }}</span>
                 <div>
-                    <a href="{{ url_for('edit_question', workspace_id=workspace.id, question_id=question.id) }}" class="btn btn-outline-secondary btn-sm">Edit</a>
-                    <input type="checkbox" name="selected_questions" value="{{ question.id }}" class="form-check-input">
+                    {% if question.file_src %}  
+                    {% endif %}
+                    <a href="{{ url_for('edit_question', workspace_id=workspace.key, question_id=question.id) }}" class="btn btn-outline-secondary btn-sm">Edit</a>
+                    <input type="checkbox" name="selected_questions" value="{{ question.id }}" class="form-check-input mx-2">
+                    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addQuestionModal" data-question-id="{{ question.id }}" data-question-text="{{ question.ques_txt }}">Add</button>
                 </div>
             </div>
             {% endfor %}
@@ -34,4 +56,87 @@
         </div>
     </form>
 </div>
+
+<!-- Add Question Modal -->
+<!-- Add Question Modal -->
+<div class="modal fade" id="addQuestionModal" tabindex="-1" aria-labelledby="addQuestionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addQuestionModalLabel">Assign Marks</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addQuestionForm" method="POST" action="{{ url_for('add_question_to_temp', workspace_key=workspace.key) }}">
+                    <input type="hidden" id="questionId" name="question_id">
+                    <div class="mb-3">
+                        <label for="questionText" class="form-label">Question</label>
+                        <p id="questionText" class="form-control-plaintext"></p>
+                    </div>
+                    <div class="mb-3">
+                        <label for="questionMarks" class="form-label">Marks</label>
+                        <input type="number" class="form-control" id="questionMarks" name="marks" min="1" value="1" required>
+                        <small class="form-text text-muted">You can assign any number of marks to this question.</small>
+                    </div>
+                    <div class="modal-footer px-0 pb-0">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Question</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Script to pass question data to modal
+    const addQuestionModal = document.getElementById('addQuestionModal');
+    if (addQuestionModal) {
+        addQuestionModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const questionId = button.getAttribute('data-question-id');
+            const questionText = button.getAttribute('data-question-text');
+            
+            const modalQuestionId = document.getElementById('questionId');
+            const modalQuestionText = document.getElementById('questionText');
+            
+            modalQuestionId.value = questionId;
+            modalQuestionText.textContent = questionText;
+        });
+    }
+    
+    // Remove any existing validation for marks
+    document.getElementById('addQuestionForm').addEventListener('submit', function(event) {
+        // Allow any mark value, no restrictions
+        return true;
+    });
+
+    // Override any validation functions that might be in the global scope
+    window.addEventListener('load', function() {
+    // Remove any existing validation for marks
+    const markInput = document.getElementById('questionMarks');
+    if (markInput) {
+        // Remove any step attributes that might force multiples of 5
+        markInput.removeAttribute('step');
+        
+        // Override any validation functions
+        markInput.addEventListener('input', function(e) {
+            // Allow any mark value
+            e.target.setCustomValidity('');
+        });
+    }
+    
+    // Override form submission
+    const addForm = document.getElementById('addQuestionForm');
+    if (addForm) {
+        addForm.addEventListener('submit', function(e) {
+            // Don't prevent submission
+            return true;
+        });
+    }
+    
+    // Debug any validation errors
+    console.log("Mark validation override installed");
+});
+</script>
 {% endblock %}

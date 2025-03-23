@@ -12,3 +12,4 @@ google-generativeai
 Pillow
 cloudinary
 tf-keras
+reportlab
