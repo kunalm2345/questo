@@ -314,7 +314,7 @@ def add_question(workspace_id):
             "file_src": question_form.file_src.data,
             "ques_txt": question_form.question_text.data,
             "tags": tags_list,
-            "sol": question_form.sol.data,
+            "solutions": question_form.sol.data,
             "practice": question_form.practice.data,
         }
         q_coll.insert_one(question)
