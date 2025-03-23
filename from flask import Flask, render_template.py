@@ -1,31 +1,11 @@
-from flask import Flask, render_template, url_for, redirect, request, session, jsonify, flash
+from flask import Flask, render_template, url_for, redirect, request, session, jsonify
 from wtforms import SelectMultipleField, SubmitField, FileField, BooleanField, TextAreaField, StringField
 from wtforms.validators import DataRequired
 from flask_wtf import FlaskForm
-import cloudinary
-import cloudinary.uploader
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
-from functions import add_to_vectordb, vectordb_exists, search_vectordb
-
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'  # Replace with a secure secret key
-
-# Cloudinary configuration (replace with your credentials)
-cloudinary.config(
-    cloud_name="dy0q5cx5j",
-    api_key="212258678217944",
-    api_secret="xK3KvwLdOe-RaAl2o_c9LkMfMUQ"
-)
-
-class AddQForm(FlaskForm):
-    question = StringField('Question', validators=[DataRequired()])
-    submit = SubmitField('Submit')
-
-class UploadImageForm(FlaskForm):
-    image = request.files['image'] #get image from request.
-    submit = SubmitField('Upload Image')
+from thingy import retrieve_similar_images  # Import FAISS retrieval function
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
@@ -72,14 +52,12 @@ class AddQForm(FlaskForm):
     practice = BooleanField('Set this as a practice question')
     submit = SubmitField('Save Question')
 
-class WorkspaceForm(FlaskForm):
-    key = StringField('Workspace Key', validators=[DataRequired()])
-    submit = SubmitField('Create Workspace')
 
 class SearchForm(FlaskForm):
     query = StringField('Search', validators=[DataRequired()], 
                        render_kw={"placeholder": "Enter search query..."})
     submit = SubmitField('Search')
+
 
 # Cloudinary setup - add near the top of your application
 import cloudinary
@@ -98,6 +76,9 @@ cloudinary.config(
 
 @app.route('/api/upload_file', methods=['POST'])
 def upload_file():
+    print("Files in request:", request.files)  # Debug line
+    print("Form data:", request.form)  # Debug line
+    
     if 'question_file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     
@@ -125,28 +106,19 @@ def upload_file():
                                                   resource_type="image")
         file_url = upload_result.get('secure_url')
 
-        # Process with genAI
-        result = None
-        try:
-            import llm
-            ai_response = llm.process_image_url_with_genai(
-                file_url, 
-                "Respond it in python dictionary type object with three fields: ques_txt (str), tags (list of str), solution (str). DO NOT write any other text before or after this. ques_txt should be the transcription of the question tags should be a list of 1-3 keyword from the question that can help a model to know what its related to. solution should be the solution of the question", 
-                llm.api_key, 
-                model_name="gemini-2.0-flash"
-            )
-            result_str = ai_response.lstrip('```python').rstrip('```').lstrip('```json').lstrip('```javascript')
-            result = eval(result_str)
-        except Exception as e:
-            print(f"Error processing image with AI: {str(e)}")
-            # Continue even if AI processing fails
-        
-        # Return JSON with file URL and AI results
-        return jsonify({
-            'success': True,
-            'file_url': file_url,
-            'result': result
-        })
+        import llm
+        result = llm.process_image_url_with_genai(file_url, "Respond it in python dictionary type object with three fields: ques_txt (str), tags (list of str), solution (str). DO NOT write any other text before or after this. ques_txt should be the transcription of the question tags should be a list of 1-3 keyword from the question that can help a model to know what its related to. solution should be the solution of the question", llm.api_key, model_name="gemini-2.0-flash")
+        result = result.lstrip('```python').rstrip('```')
+        print("fff", result)
+        print(type(result))
+        result  = eval(result)
+        print("efrdsf", result)
+        print(type(result))
+        # Redirect back to add question page with the URL
+        return redirect(url_for('add_question', 
+                               workspace_id=workspace_id, 
+                               file_url=file_url,
+                               result=result))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -210,6 +182,7 @@ def callback():
         new_user = {
             "email": userinfo["email"],
             "name": userinfo["name"],
+            "workspaces": []
         }
         result = user_coll.insert_one(new_user)
         user_id = result.inserted_id
@@ -218,14 +191,13 @@ def callback():
 
     # Set session variables
     session['id'] = str(user_id)
-    session['email'] = user.get("email")
-    session['name'] = user.get("name")
+    session['email'] = userinfo.get("email")
+    session['name'] = userinfo.get("name")
+
     return redirect(url_for('workspaces'))
 
 
-from bson import ObjectId  # Ensure you import ObjectId for MongoDB object matching
-
-@app.route('/workspaces/', methods=['GET', 'POST'])
+@app.route('/workspaces/')
 def workspaces():
     # Check if the user is logged in
     if 'id' not in session:
@@ -233,132 +205,48 @@ def workspaces():
     
     # Fetch the logged-in user's MongoDB document using the session's id
     user = user_coll.find_one({"_id": ObjectId(session['id'])})
-    print(user)
     
     if not user:
         return redirect(url_for('index'))
-
+    
     # Get the list of workspace IDs associated with the user
     workspace_ids = user.get("workspaces", [])
-
-    form = WorkspaceForm()
-
-    if form.validate_on_submit():
-        workspace = {
-            "key": form.key.data,
-            "members": [session['id'],],  # Associate with the logged-in user
-        }
-
-        workspace_key = workspace.get("key")
-        existing_workspace = work_coll.find_one({"key": workspace_key})
-        if existing_workspace:
-            flash("Error: Workspace key already exists!", "danger")
-            return redirect(url_for("workspaces"))
-        
-        result = work_coll.insert_one(workspace)
-        inserted_id = result.inserted_id
-        print(inserted_id)
-        # inserted_doc = work_coll.find_one({"_id": inserted_id})
-        # Add the workspace _id to the user's workspaces list
-        user_coll.update_one(
-            {"_id": ObjectId(session['id'])},  
-            {"$push": {"workspaces": inserted_id}}  
-        )
-        flash("Workspace created successfully!", "success")
-        return redirect(url_for("workspaces"))
-
-    workspaces = []
-    # Query MongoDB for each workspace by its ObjectId
-    for workspace_id in user.get("workspaces", []):
-        # print(workspace_id)
-        # print(work_coll.find_one({"_id": workspace_id}))
-        workspaces.append(work_coll.find_one({"_id": workspace_id}))
-
-    # print(workspace_id)
-
     
-    return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces, form=form)
+    # Query MongoDB for each workspace by its ObjectId
+    workspaces = [
+        {
+            "id": str(workspace["_id"]),
+            "name": workspace["name"],
+            "description": workspace.get("description", "No description available")
+        }
+        for workspace in work_coll.find({"_id": {"$in": [ObjectId(wid) for wid in workspace_ids]}})
+    ]
+    
+    return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces)
 
-@app.route('/workspace/<workspace_key>/', methods=['GET', 'POST'])
-def workspace_view(workspace_key):
+
+@app.route('/workspace/<workspace_id>')
+def workspace_view(workspace_id):
     if 'id' not in session:
         return redirect(url_for('index'))
-    
-    # Create search form
-    form = SearchForm()
 
-    # Find the workspace by key
-    workspace = work_coll.find_one({"key": workspace_key})
+    # Find the workspace by ID
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
-    
-    # Get MongoDB _id of the workspace
-    mongo_id = workspace.get("_id")
-    
-    # Default to showing all questions
-    questions = list(q_coll.find({"workspace_id": mongo_id}))
+
+    # Find questions associated with the workspace
+    questions = list(q_coll.find({"workspace_id": ObjectId(workspace_id)}))
     for question in questions:
         question['id'] = str(question['_id'])  # Ensure question IDs are converted to strings
 
     # Ensure workspace ID is converted to string for consistency
     workspace['id'] = str(workspace['_id'])
 
-    # Initialize search status
-    is_search = False
-    search_query = None
+    print(workspace)
+    print(questions)
 
-    # Handle search form submission
-    if form.validate_on_submit():
-        is_search = True
-        search_query = form.query.data
-        print(f"Processing search for: {search_query}")
-        
-        # Check if vectordb exists for this workspace
-        if vectordb_exists(workspace_key):
-            try:
-                # Search vectordb for similar questions
-                search_results = search_vectordb(workspace_key, search_query, top_k=3)
-                print(f"Search results: {search_results}")
-                
-                # Get unique image paths from the search results
-                image_paths = [result["image_path"] for result in search_results]
-                
-                if image_paths:
-                    # Find questions with these image paths
-                    search_questions = list(q_coll.find({"file_src": {"$in": image_paths}}))
-                    for question in search_questions:
-                        question['id'] = str(question['_id'])
-                        
-                        # Add relevance score to questions
-                        for result in search_results:
-                            if result["image_path"] == question["file_src"]:
-                                question["relevance_score"] = result["score"]
-                                question["matching_tag"] = result["tag"]
-                                break
-                    
-                    # Sort questions by relevance score if available
-                    if all("relevance_score" in q for q in search_questions):
-                        search_questions.sort(key=lambda q: q.get("relevance_score", float('inf')))
-                    
-                    questions = search_questions
-                    print(f"Found {len(questions)} matching questions")
-                else:
-                    # No search results, return empty list
-                    questions = []
-                    print("No matching questions found")
-            except Exception as e:
-                print(f"Error searching vectordb: {e}")
-                import traceback
-                traceback.print_exc()
-                # Continue with default questions list
-
-    return render_template('workspace_view.html', 
-                           workspace=workspace, 
-                           questions=questions, 
-                           form=form,
-                           is_search=is_search,
-                           search_query=search_query)
-
+    return render_template('workspace_view.html', workspace=workspace, questions=questions)
 
 @app.route('/workspace/<workspace_id>/add-question/', methods=['GET', 'POST'])
 def add_question(workspace_id):
@@ -370,72 +258,81 @@ def add_question(workspace_id):
     if 'id' not in session:
         return redirect(url_for('signin'))
     
-    # Create form
+    # Create both forms
+    image_form = ImageUploadForm()
     question_form = AddQForm()
     
-    # Get file_url from query parameter if available
+    # Check if we have a file_url from the upload endpoint
     file_url = request.args.get('file_url')
+    if file_url:
+        question_form.file_src.data = file_url
+
+    if request.args.get('result'):
+        result = request.args.get('result')
+        print("result", result, type(result))
+        # result = eval(result)
+        question_form.question_text.data = result.get('ques_txt', '')
+        question_form.tags.data = result.get('tags', [])
+        question_form.sol.data = result.get('solution', '')
     
-    # Handle form submission
+    # Handle main form submission (after image is uploaded)
     if request.method == 'POST' and question_form.validate_on_submit():
         # Parse tags from JSON string
         try:
             tags_list = json.loads(question_form.tags.data)
         except:
             tags_list = []  # Default to empty list if parsing fails
-        
+            
         # Save question to database
         question = {
-            "workspace_id": workspace.get("_id"),
+            "workspace_id": workspace_id,
             "file_src": question_form.file_src.data,
             "ques_txt": question_form.question_text.data,
             "tags": tags_list,
-            "solutions": question_form.sol.data,
+            "sol": question_form.sol.data,
             "practice": question_form.practice.data,
         }
         q_coll.insert_one(question)
-        
-        # Add the image and tags to the vectordb (with error handling)
-        file_src = question_form.file_src.data
-        
-        try:
-            # Process each tag separately for better retrieval
-            for tag in tags_list:
-                add_to_vectordb(workspace_id, tag, file_src)
-        except Exception as e:
-            # Log the error but continue - don't prevent question from being added
-            print(f"Error updating vectordb: {e}")
-            # You might want to add proper logging here
-        
-        return redirect(url_for('workspace_view', workspace_key=workspace_id))
+        return redirect(url_for('workspace_view', workspace_id=workspace_id))
     
     return render_template(
-        'add_question.html',
+        'add_question.html', 
         workspace=workspace,
+        image_form=image_form, 
         question_form=question_form,
         file_url=file_url
     )
 
 
 # Create Question Paper Page
-@app.route('/workspace/<workspace_key>/create-qp/', methods=['GET', 'POST'])
-def create_qp(workspace_key):
+@app.route('/workspace/<workspace_id>/create-qp/', methods=['GET', 'POST'])
+def create_qp(workspace_id):
     if 'id' not in session:
         return redirect(url_for('signin'))  # Redirect to sign-in if session is missing
 
     # Find the workspace by ID
-    workspace = work_coll.find_one({"key": workspace_id})
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
+    
+    # Convert ObjectId to string for the template
+    workspace['id'] = str(workspace['_id'])
+
+    # Retrieve existing questions for the workspace
+    if 'questions' not in session:
+        session['questions'] = {}
+    
+    questions = session['questions'].get(workspace_id, [])
 
     # Handle question paper creation
     if request.method == 'POST':
         selected_questions = request.form.getlist('selected_questions')
         session['question_paper'] = selected_questions  # Store selected questions
         session.modified = True
-        return redirect(url_for('workspace_view', workspace_key=workspace_id))  # Redirect after saving
+        return redirect(url_for('workspace_view', workspace_id=workspace_id))  # Redirect after saving
 
     return render_template('create_qp.html', workspace=workspace, questions=questions)
+
 
 @app.route('/workspace/<workspace_id>/question-paper/', methods=['GET', 'POST'])
 def preview_qp(workspace_id):
@@ -462,14 +359,15 @@ def preview_qp(workspace_id):
 
     return render_template('preview_qp.html', workspace=workspace, question_paper=question_paper)
 
+
 @app.route('/workspace/<workspace_id>/download-qp/')
 def download_qp(workspace_id):
     return "Download Question Paper - (TODO: Generate PDF)"
 
+
 @app.route('/workspace/<workspace_id>/download-ans-key/')
 def download_ans_key(workspace_id):
     return "Download Answer Key - (TODO: Generate PDF)"
-
 
 
 # Practice Questions Page
@@ -480,7 +378,7 @@ def practice_questions(workspace_id):
         return redirect(url_for('index'))
     
     # Find the workspace by ID
-    workspace = work_coll.find_one({"key": workspace_id})
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
     
@@ -497,14 +395,14 @@ def practice_questions(workspace_id):
     if form.validate_on_submit():
         # Get the search query from the form
         search_query = form.query.data
-
+        
         # Get practice questions for this workspace
         practice_questions_query = {
             "workspace_id": ObjectId(workspace_id),
             "isPractice": True
         }
         all_practice_questions = list(q_coll.find(practice_questions_query))
-
+        
         # If there's a search query, use FAISS to find similar questions
         if search_query:
             # Get the IDs of practice questions in this workspace
@@ -521,18 +419,19 @@ def practice_questions(workspace_id):
     else:
         # On initial page load, show all practice questions
         questions = list(q_coll.find({
-            "workspace_id": ObjectId(workspace['id']),
+            "workspace_id": ObjectId(workspace_id),
             "isPractice": True
         }))
-        
+    
     # Convert ObjectIds to strings for the template
     for question in questions:
         question['id'] = str(question['_id'])
-
+    
     return render_template('practice_questions.html', 
-                            workspace=workspace, 
-                            questions=questions,
-                            form=form)
+                          workspace=workspace, 
+                          questions=questions,
+                          form=form)
+
 
 # Edit Question Page
 @app.route('/workspace/<workspace_id>/edit/<question_id>/')

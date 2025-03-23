@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Question Paper - {{ workspace_id }}{% endblock %}
+{% block title %}Question Paper - {{ workspace.name }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -10,8 +10,8 @@
             <p>Max Duration: ...</p>
         </div>
         <div>
-            <a href="{{ url_for('download_qp', workspace_id=workspace_id) }}" class="btn btn-secondary">Download Q Paper</a>
-            <a href="{{ url_for('download_ans_key', workspace_id=workspace_id) }}" class="btn btn-secondary">Download Ans Key</a>
+            <a href="{{ url_for('download_qp', workspace_id=workspace.id) }}" class="btn btn-secondary">Download Q Paper</a>
+            <a href="{{ url_for('download_ans_key', workspace_id=workspace.id) }}" class="btn btn-secondary">Download Ans Key</a>
         </div>
     </div>
 
@@ -24,9 +24,9 @@
         <div class="list-group mt-3">
             {% for question in question_paper %}
             <div class="list-group-item d-flex justify-content-between align-items-center">
-                <span>{{ question.text }}</span>
+                <span>{{ question.ques_txt }}</span>
                 <div>
-                    <a href="{{ url_for('edit_question', workspace_id=workspace_id, question_id=question.id) }}" class="btn btn-outline-secondary btn-sm">Edit</a>
+                    <a href="{{ url_for('edit_question', workspace_id=workspace.id, question_id=question.id) }}" class="btn btn-outline-secondary btn-sm">Edit</a>
                     <button type="submit" name="delete_question" value="{{ question.id }}" class="btn btn-outline-danger btn-sm">Delete</button>
                 </div>
             </div>

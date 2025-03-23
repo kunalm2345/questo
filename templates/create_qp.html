@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Creating a Question Paper - {{ workspace_id }}{% endblock %}
+{% block title %}Creating a Question Paper - {{ workspace.name }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center">
         <h1 class="h3">Creating a Q Paper</h1>
-        <a href="{{ url_for('workspace_view', workspace_id=workspace_id) }}" class="btn btn-secondary">Done</a>
+        <a href="{{ url_for('workspace_view', workspace_key=workspace.id) }}" class="btn btn-secondary">Done</a>
     </div>
 
     <!-- Search Bar -->
@@ -16,13 +16,13 @@
     </div>
 
     <!-- Questions List Form -->
-    <form method="POST" action="{{ url_for('preview_qp', workspace_id=workspace_id) }}">
+    <form method="POST" action="{{ url_for('preview_qp', workspace_id=workspace.id) }}">
         <div class="list-group">
             {% for question in questions %}
             <div class="list-group-item d-flex justify-content-between align-items-center">
-                <span>{{ question.text }}</span>
+                <span>{{ question.ques_txt }}</span>
                 <div>
-                    <a href="{{ url_for('edit_question', workspace_id=workspace_id, question_id=question.id) }}" class="btn btn-outline-secondary btn-sm">Edit</a>
+                    <a href="{{ url_for('edit_question', workspace_id=workspace.id, question_id=question.id) }}" class="btn btn-outline-secondary btn-sm">Edit</a>
                     <input type="checkbox" name="selected_questions" value="{{ question.id }}" class="form-check-input">
                 </div>
             </div>
