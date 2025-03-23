@@ -5,6 +5,7 @@ from flask_wtf import FlaskForm
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
+from thingy import retrieve_similar_images  # Import FAISS retrieval function
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
@@ -51,14 +52,12 @@ class AddQForm(FlaskForm):
     practice = BooleanField('Set this as a practice question')
     submit = SubmitField('Save Question')
 
-class WorkspaceForm(FlaskForm):
-    key = StringField('Workspace Key', validators=[DataRequired()])
-    submit = SubmitField('Create Workspace')
 
 class SearchForm(FlaskForm):
     query = StringField('Search', validators=[DataRequired()], 
                        render_kw={"placeholder": "Enter search query..."})
     submit = SubmitField('Search')
+
 
 # Cloudinary setup - add near the top of your application
 import cloudinary
@@ -183,6 +182,7 @@ def callback():
         new_user = {
             "email": userinfo["email"],
             "name": userinfo["name"],
+            "workspaces": []
         }
         result = user_coll.insert_one(new_user)
         user_id = result.inserted_id
@@ -191,14 +191,13 @@ def callback():
 
     # Set session variables
     session['id'] = str(user_id)
-    session['email'] = user.get("email")
-    session['name'] = user.get("name")
+    session['email'] = userinfo.get("email")
+    session['name'] = userinfo.get("name")
+
     return redirect(url_for('workspaces'))
 
 
-from bson import ObjectId  # Ensure you import ObjectId for MongoDB object matching
-
-@app.route('/workspaces/', methods=['GET', 'POST'])
+@app.route('/workspaces/')
 def workspaces():
     # Check if the user is logged in
     if 'id' not in session:
@@ -206,65 +205,46 @@ def workspaces():
     
     # Fetch the logged-in user's MongoDB document using the session's id
     user = user_coll.find_one({"_id": ObjectId(session['id'])})
-    print(user)
     
     if not user:
         return redirect(url_for('index'))
-
+    
     # Get the list of workspace IDs associated with the user
     workspace_ids = user.get("workspaces", [])
-
-    form = WorkspaceForm()
-
-    if form.validate_on_submit():
-        workspace = {
-            "key": form.key.data,
-            "members": [session['id'],],  # Associate with the logged-in user
-        }
-        result = work_coll.insert_one(workspace)
-        inserted_id = result.inserted_id
-        print(inserted_id)
-        # inserted_doc = work_coll.find_one({"_id": inserted_id})
-        # Add the workspace _id to the user's workspaces list
-        user_coll.update_one(
-            {"_id": ObjectId(session['id'])},  
-            {"$push": {"workspaces": inserted_id}}  
-        )
-
-    workspaces = []
-    # Query MongoDB for each workspace by its ObjectId
-    for workspace_id in user.get("workspaces", []):
-        # print(workspace_id)
-        # print(work_coll.find_one({"_id": workspace_id}))
-        workspaces.append(work_coll.find_one({"_id": workspace_id}))
-
-    # print(workspace_id)
-
     
-    return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces, form=form)
+    # Query MongoDB for each workspace by its ObjectId
+    workspaces = [
+        {
+            "id": str(workspace["_id"]),
+            "name": workspace["name"],
+            "description": workspace.get("description", "No description available")
+        }
+        for workspace in work_coll.find({"_id": {"$in": [ObjectId(wid) for wid in workspace_ids]}})
+    ]
+    
+    return render_template('workspaces.html', name=user.get("name", "User"), workspaces=workspaces)
 
-@app.route('/workspace/<workspace_id>/')
+
+@app.route('/workspace/<workspace_id>')
 def workspace_view(workspace_id):
     if 'id' not in session:
         return redirect(url_for('index'))
+
     # Find the workspace by ID
-    workspace = work_coll.find_one({"key": workspace_id})
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
+
     # Find questions associated with the workspace
-    questions = list(q_coll.find({"workspace_id": workspace['_id']}))
+    questions = list(q_coll.find({"workspace_id": ObjectId(workspace_id)}))
     for question in questions:
         question['id'] = str(question['_id'])  # Ensure question IDs are converted to strings
 
     # Ensure workspace ID is converted to string for consistency
     workspace['id'] = str(workspace['_id'])
 
-    # Sample questions (Replace with DB query)
-    # questions = [
-    #     {"id": 1, "ques_txt": "What is O(n) complexity?"},
-    #     {"id": 2, "ques_txt": "Explain binary search."},
-    #     {"id": 3, "ques_txt": "Difference between list and tuple?"}
-    # ]
+    print(workspace)
+    print(questions)
 
     return render_template('workspace_view.html', workspace=workspace, questions=questions)
 
@@ -323,6 +303,7 @@ def add_question(workspace_id):
         file_url=file_url
     )
 
+
 # Create Question Paper Page
 @app.route('/workspace/<workspace_id>/create-qp/', methods=['GET', 'POST'])
 def create_qp(workspace_id):
@@ -352,6 +333,7 @@ def create_qp(workspace_id):
 
     return render_template('create_qp.html', workspace=workspace, questions=questions)
 
+
 @app.route('/workspace/<workspace_id>/question-paper/', methods=['GET', 'POST'])
 def preview_qp(workspace_id):
     if 'id' not in session:
@@ -377,13 +359,16 @@ def preview_qp(workspace_id):
 
     return render_template('preview_qp.html', workspace=workspace, question_paper=question_paper)
 
+
 @app.route('/workspace/<workspace_id>/download-qp/')
 def download_qp(workspace_id):
     return "Download Question Paper - (TODO: Generate PDF)"
 
+
 @app.route('/workspace/<workspace_id>/download-ans-key/')
 def download_ans_key(workspace_id):
     return "Download Answer Key - (TODO: Generate PDF)"
+
 
 # Practice Questions Page
 @app.route('/workspace/<workspace_id>/practice/', methods=['GET', 'POST'])
@@ -393,7 +378,7 @@ def practice_questions(workspace_id):
         return redirect(url_for('index'))
     
     # Find the workspace by ID
-    workspace = work_coll.find_one({"key": workspace_id})
+    workspace = work_coll.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         return redirect(url_for('workspaces'))  # Redirect if workspace not found
     
@@ -434,7 +419,7 @@ def practice_questions(workspace_id):
     else:
         # On initial page load, show all practice questions
         questions = list(q_coll.find({
-            "key": workspace_id,
+            "workspace_id": ObjectId(workspace_id),
             "isPractice": True
         }))
     
@@ -446,6 +431,7 @@ def practice_questions(workspace_id):
                           workspace=workspace, 
                           questions=questions,
                           form=form)
+
 
 # Edit Question Page
 @app.route('/workspace/<workspace_id>/edit/<question_id>/')
