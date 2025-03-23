@@ -20,7 +20,7 @@
         {% if workspaces and workspaces|length > 0 %}
             {% for workspace in workspaces %}
             <div class="col">
-                <a href="{{ url_for('workspace_view', workspace_id=workspace.key) }}" class="text-decoration-none">
+                <a href="{{ url_for('workspace_view', workspace_key=workspace.key) }}" class="text-decoration-none">
                     <div class="card h-100 shadow-sm">
                         <div class="card-body">
                             <h5 class="card-title">{{ workspace.key }}</h5>
