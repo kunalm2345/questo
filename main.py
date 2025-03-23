@@ -7,14 +7,15 @@ import cloudinary.uploader
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
+import os as OS
 
 from functions import add_to_vectordb, vectordb_exists, search_vectordb
 
 # Cloudinary configuration (replace with your credentials)
 cloudinary.config(
     cloud_name="dy0q5cx5j",
-    api_key="212258678217944",
-    api_secret="xK3KvwLdOe-RaAl2o_c9LkMfMUQ"
+    api_key=OS.environ.get('cd_api_key'),
+    api_secret=OS.environ.get('cd_api_sec')
 )
 from functions import add_to_vectordb, vectordb_exists, search_vectordb
 import io
@@ -25,7 +26,7 @@ from reportlab.lib import colors
 
 
 # MongoDB connection
-client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
+client = MongoClient(OS.environ.get('mongo_db'))
 db = client['questoDB']
 qp_coll = db['QuestionPapers']
 q_coll = db['Questions']
@@ -33,8 +34,8 @@ user_coll = db['Users']
 work_coll = db['Workspaces']
 
 # Google OAuth credentials
-CLIENT_ID = "435559535537-g0c328qb3ua1g0fdqqkjbrd6d646788d.apps.googleusercontent.com"
-CLIENT_SECRET = "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"
+CLIENT_ID = OS.environ.get('CLIENT_ID')
+CLIENT_SECRET = OS.environ.get('CLIENT_SECRET')
 REDIRECT_URI = "http://127.0.0.1:5000/callback"
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
