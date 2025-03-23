@@ -7,7 +7,7 @@
     <!-- Header Section -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h3">Practice Questions</h1>
-        <a href="{{ url_for('workspace_view', workspace_key=workspace.id) }}" class="btn btn-outline-secondary">
+        <a href="{{ url_for('workspace_view', workspace_key=workspace.key) }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i>Back to Workspace
         </a>
     </div>
@@ -15,17 +15,19 @@
     <!-- Search Form -->
     <div class="card mb-4 shadow-sm">
         <div class="card-body">
-            <form method="GET" action="{{ url_for('practice_questions', workspace_id=workspace.id) }}">
+            <form method="POST" action="{{ url_for('practice_questions', workspace_id=workspace.key) }}">
+                {{ form.hidden_tag() }}
                 <div class="mb-3">
-                    <label for="searchTags" class="form-label">Search by Tags</label>
-                    <input type="text" class="form-control" id="searchTags" name="tags" 
-                           placeholder="Enter tags separated by commas (e.g., algorithms, sorting, recursion)" 
-                           value="{{ request.args.get('tags', '') }}">
-                    <div class="form-text">Enter multiple tags separated by commas to search</div>
+                    <label for="query" class="form-label">Search Questions</label>
+                    <div class="input-group">
+                        {{ form.query(class="form-control") }}
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                    <div class="form-text">Enter keywords to find similar questions</div>
                 </div>
-                <button type="submit" class="btn btn-primary">Search</button>
-                {% if request.args.get('tags') %}
-                    <a href="{{ url_for('practice_questions', workspace_id=workspace.id) }}" class="btn btn-outline-secondary ms-2">Clear</a>
+                
+                {% if form.query.data %}
+                    <a href="{{ url_for('practice_questions', workspace_id=workspace.key) }}" class="btn btn-outline-secondary">Clear Search</a>
                 {% endif %}
             </form>
         </div>
@@ -80,7 +82,7 @@
         </div>
     {% else %}
         <div class="alert alert-info">
-            {% if request.args.get('tags') %}
+            {% if form.query.data %}
                 No practice questions found matching your search.
                 <a href="{{ url_for('practice_questions', workspace_id=workspace.id) }}" class="alert-link">View all practice questions</a>.
             {% else %}

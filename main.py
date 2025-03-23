@@ -5,6 +5,7 @@ from flask_wtf import FlaskForm
 import requests
 from bson import ObjectId  # For handling MongoDB ObjectId
 from pymongo import MongoClient
+from functions import retrieve_similar_images
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://f20231146:Zc2Li5sO9UG6ZeEo@cluster0.koj5w.mongodb.net/?retryWrites=true&w=majority")
@@ -411,14 +412,14 @@ def practice_questions(workspace_id):
     if form.validate_on_submit():
         # Get the search query from the form
         search_query = form.query.data
-        
+
         # Get practice questions for this workspace
         practice_questions_query = {
             "workspace_id": ObjectId(workspace_id),
             "isPractice": True
         }
         all_practice_questions = list(q_coll.find(practice_questions_query))
-        
+
         # If there's a search query, use FAISS to find similar questions
         if search_query:
             # Get the IDs of practice questions in this workspace
@@ -435,18 +436,18 @@ def practice_questions(workspace_id):
     else:
         # On initial page load, show all practice questions
         questions = list(q_coll.find({
-            "key": workspace_id,
+            "workspace_id": ObjectId(workspace['id']),
             "isPractice": True
         }))
-    
+        
     # Convert ObjectIds to strings for the template
     for question in questions:
         question['id'] = str(question['_id'])
-    
+
     return render_template('practice_questions.html', 
-                          workspace=workspace, 
-                          questions=questions,
-                          form=form)
+                            workspace=workspace, 
+                            questions=questions,
+                            form=form)
 
 # Edit Question Page
 @app.route('/workspace/<workspace_id>/edit/<question_id>/')
